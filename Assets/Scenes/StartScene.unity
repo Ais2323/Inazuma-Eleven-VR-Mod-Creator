@@ -1944,6 +1944,7 @@ MonoBehaviour:
   DirPlaceholderText: {fileID: 19800521}
   BrowseText: {fileID: 198772273}
   LoadDump: {fileID: 1741642950}
+  endSceneName: MainScene
   path: 
 --- !u!1 &1580379537
 GameObject:

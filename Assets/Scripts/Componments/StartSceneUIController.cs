@@ -11,6 +11,7 @@ public class StartSceneUIController : BaseUIController
     public Text DirPlaceholderText;
     public Text BrowseText;
     public Text LoadDump;
+    public string endSceneName;
 
     public string path = "";
 
@@ -19,7 +20,7 @@ public class StartSceneUIController : BaseUIController
         dirInputField.text = SettingManager.Settings["path"];
         path = dirInputField.text;
         LoadDumpBtn.interactable = !string.IsNullOrWhiteSpace(path);
-        if (DumpDataManager.ValidateSavedPath()) SceneManager.LoadSceneAsync("CharacterPreviewDemo");
+        if (DumpDataManager.ValidateSavedPath()) SceneManager.LoadSceneAsync(endSceneName);
     }
 
     public override void UpdateLocalization()
@@ -56,6 +57,6 @@ public class StartSceneUIController : BaseUIController
             Debug.LogWarning("Dump Path is invalid");
             return;
         }
-        SceneManager.LoadSceneAsync("CharacterPreviewDemo");
+        SceneManager.LoadSceneAsync(endSceneName);
     }
 }
