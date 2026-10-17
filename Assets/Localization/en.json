@@ -1,5 +1,25 @@
 {
     "dirPlaceholder": "Enter File Path...",
     "browse": "Browse",
-    "loadDump": "Load Dump"
+    "loadDump": "Load Dump",
+    "CharacterMaker": "Character Maker",
+    "CharacterInfo": "Character Info",
+    "Head": "Head",
+    "Hair": "Hair",
+    "Other": "Other",
+    "Replace": "Replace",
+    "BodyType": "Body Type",
+    "SkinColor": "Skin Color",
+    "UniformCollar": "Collar",
+    "Equipment": "Equipment",
+    "ChestSize": "Chest Size",
+    "Export": "Export",
+    "Model": "Model",
+    "Texture": "Texture",
+    "ExportTextureAndUV": "Export Texture & UV",
+    "Position": "Position",
+    "Rotation": "Rotation",
+    "Scale": "Scale",
+    "Save": "Save",
+    "Load": "Load"
 }

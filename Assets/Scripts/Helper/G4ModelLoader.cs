@@ -5,11 +5,15 @@ using UnityEngine;
 
 public static class G4ModelLoader
 {
-    public static GameObject CreateModel(string modelPath, string modelName, string textureName = null)
+    public static GameObject CreateModel(
+        string modelPath,
+        string modelName,
+        string textureName = null,
+        string texturePath = null)
     {
         // 取得路徑
         var modelRoot = Path.Combine(DumpDataManager.CommonPath, modelPath);
-        var textureRoot = Path.Combine(DumpDataManager.Dx11Path, modelPath);
+        var textureRoot = Path.Combine(DumpDataManager.Dx11Path, texturePath ?? modelPath);
 
         // 取得g4md與g4mg檔案位置
         var meta = File.ReadAllBytes(Path.Combine(modelRoot, $"{modelName}.g4md"));
@@ -41,6 +45,12 @@ public static class G4ModelLoader
             if (ocData != null) material.SetTexture("_OcTex", CreateTexture(resources, ocData, true));
             var spmData = G4TextureParser.ChooseSuffix(materialData, textures, "spm");
             if (spmData != null) material.SetTexture("_SpmTex", CreateTexture(resources, spmData, true));
+            var mskData = G4TextureParser.ChooseSuffix(materialData, textures, "msk");
+            if (mskData != null)
+            {
+                material.SetTexture("_MskTex", CreateTexture(resources, mskData, true));
+                material.SetFloat("_HasMsk", 1f);
+            }
             materials[i] = material;
         }
 

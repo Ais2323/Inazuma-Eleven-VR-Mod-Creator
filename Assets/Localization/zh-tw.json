@@ -1,5 +1,25 @@
 {
     "dirPlaceholder": "輸入檔案路徑...",
     "browse": "選擇資料夾",
-    "loadDump": "載入來源檔"
+    "loadDump": "載入來源檔",
+    "CharacterMaker": "角色編輯器",
+    "CharacterInfo": "人物資訊",
+    "Head": "頭型",
+    "Hair": "頭髮",
+    "Other": "其他",
+    "Replace": "替換",
+    "BodyType": "身體類型",
+    "SkinColor": "皮膚顏色",
+    "UniformCollar": "隊服領口",
+    "Equipment": "其他穿搭",
+    "ChestSize": "胸部大小",
+    "Export": "輸出",
+    "Model": "模型",
+    "Texture": "貼圖",
+    "ExportTextureAndUV": "輸出貼圖&UV圖",
+    "Position": "位置",
+    "Rotation": "旋轉",
+    "Scale": "縮放",
+    "Save": "儲存",
+    "Load": "讀檔"
 }

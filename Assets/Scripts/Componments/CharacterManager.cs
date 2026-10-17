@@ -38,6 +38,16 @@ public class CharacterData
     public Vector3 otherExtraScale = Vector3.one;
     public Vector3 otherTransformStartPosition = Vector3.zero;
 
+    public int originalBodyType = 1;
+    public int bodyType = 1;
+    public int originalChestSize;
+    public int chestSize;
+    public int originalBodyDetailFlags;
+    public int bodyDetailFlags;
+
+    public bool BodySettingsChanged => originalBodyType != bodyType ||
+        originalChestSize != chestSize || originalBodyDetailFlags != bodyDetailFlags;
+
     public Transform nowShowParent;
 
     private UnityAction<Transform[]> destroyFunc;
@@ -188,6 +198,40 @@ public class CharacterManager : MonoBehaviour
         public Texture2D Preview;
     }
 
+    [Serializable]
+    private sealed class CharacterMakerSave
+    {
+        public int version;
+        public string targetId;
+        public SavedPart head = new();
+        public SavedPart hair = new();
+        public SavedPart other = new();
+        public int bodyType = 1;
+        public int chestSize;
+        public int uniformCollar;
+        public int equipmentFlag2;
+        public Color skinColor = Color.white;
+        public List<SavedTexture> textures = new();
+    }
+
+    [Serializable]
+    private sealed class SavedPart
+    {
+        public string sourceId;
+        public Vector3 position;
+        public Vector3 rotation;
+        public Vector3 scale = Vector3.one;
+    }
+
+    [Serializable]
+    private sealed class SavedTexture
+    {
+        public int option;
+        public string sourceId;
+        public string role;
+        public string ddsBase64;
+    }
+
     private readonly Dictionary<string, ImportedTexture> importedTextures = new();
     private readonly Dictionary<int, List<TextureMaterialBinding>> previewMaterialBindings = new();
     private readonly Dictionary<Transform, Vector3> headBasePositions = new();
@@ -200,6 +244,9 @@ public class CharacterManager : MonoBehaviour
     private readonly Dictionary<Transform, Vector3> hairBaseScales = new();
     private readonly Dictionary<Transform, Vector3> otherBaseScales = new();
     private Vector3 targetFaceAnchor;
+    private Vector3 originalTargetFaceAnchor;
+    private float originalBodyTopY;
+    private bool hasOriginalBodyTopY;
     private Vector3 headSourceFaceAnchor;
     private Vector3 hairSourceFaceAnchor;
     private Vector3 otherSourceFaceAnchor;
@@ -212,6 +259,28 @@ public class CharacterManager : MonoBehaviour
     private Vector3 otherPositionOffset;
 
     public Camera charIconCamera;
+
+    public Transform bodyParent;
+
+    public Transform bodyTypeParent;
+
+    private readonly List<Button> bodyTypeButtons = new();
+    private readonly List<Button> uniformCollarButtons = new();
+    private readonly List<Button> equipmentButtons = new();
+    private readonly List<Button> chestSizeButtons = new();
+    private readonly Dictionary<int, GameObject> bodyPreviews = new();
+    private CfgTable bodyBaseTable;
+    private CfgTable bodyModelTable;
+    private string bodyBaseTablePath;
+    private string bodyModelTablePath;
+    private CfgTable.Row selectedCharacterRow;
+    private CfgTable.Row selectedModelRow;
+    private CfgTable.Row selectedOriginalBodyRow;
+    private string previewUniformStem;
+
+    public Image SkinColor;
+    private Color appliedSkinColor;
+    private bool hasAppliedSkinColor;
 
     private static string[] seriesNames = new string[]
     {
@@ -260,6 +329,13 @@ public class CharacterManager : MonoBehaviour
             charactorButtons.Add(btn);
         }
 
+        BindBodyTypeButtons();
+        BindUniformCollarButtons();
+        BindEquipmentButtons();
+        BindChestSizeButtons();
+        RefreshBodySettingButtons();
+        ExcludeBodyLayerFromIconCamera();
+
         // 給每個transformInput綁定
         transformInput = new();
         for(int i = 0; i < transformInputParent.Count; i++)
@@ -289,7 +365,24 @@ public class CharacterManager : MonoBehaviour
         UpdateRightPanel();
 
         // 測試用
-        Debug.Log(DumpDataManager.ValidateSavedPath());
+        bool dumpReady = DumpDataManager.ValidateSavedPath();
+        Debug.Log(dumpReady);
+        if (dumpReady) LoadDefaultBodyPreviews();
+        if (SkinColor != null)
+        {
+            appliedSkinColor = SkinColor.color;
+            hasAppliedSkinColor = true;
+        }
+    }
+
+    private void Update()
+    {
+        if (SkinColor == null) return;
+        Color color = SkinColor.color;
+        if (hasAppliedSkinColor && ApproximatelySameColor(appliedSkinColor, color)) return;
+        appliedSkinColor = color;
+        hasAppliedSkinColor = true;
+        ApplySkinColorToBodyPreviews(color);
     }
 
     void OnClickOption(int index, string title)
@@ -331,10 +424,12 @@ public class CharacterManager : MonoBehaviour
         if (nowSelectOption == 0)
         {
             hasTargetFaceAnchor = hasFaceAnchor;
-            targetFaceAnchor = faceAnchor;
+            originalTargetFaceAnchor = targetFaceAnchor = faceAnchor;
+            hasOriginalBodyTopY = false;
             ApplyHeadPosition();
             ApplyHairPosition();
             ApplyOtherPosition();
+            LoadCharacterBody(modelFrom.name);
         }
         else if (nowSelectOption == 1)
         {
@@ -643,6 +738,553 @@ public class CharacterManager : MonoBehaviour
             nowCharacterData.otherExtraScale = scale;
         }
     }
+
+    private void BindBodyTypeButtons()
+    {
+        bodyTypeButtons.Clear();
+        if (bodyTypeParent == null) return;
+        Transform buttons = bodyTypeParent.Find("BodyType/btns");
+        if (buttons == null && bodyTypeParent.name == "BodyType") buttons = bodyTypeParent.Find("btns");
+        if (buttons == null) buttons = bodyTypeParent;
+        for (int i = 0; i < buttons.childCount && bodyTypeButtons.Count < 6; i++)
+        {
+            Button button = buttons.GetChild(i).GetComponent<Button>();
+            if (button == null) continue;
+            int bodyType = bodyTypeButtons.Count + 1;
+            button.onClick.AddListener(() => OnClickBodyType(bodyType));
+            bodyTypeButtons.Add(button);
+        }
+        if (bodyTypeButtons.Count != 6)
+            Debug.LogWarning("Body Type 需要 6 個按鈕，目前找到 " + bodyTypeButtons.Count + " 個。");
+    }
+
+    private void OnClickBodyType(int bodyType)
+    {
+        if (bodyType < 1 || bodyType > 6) return;
+        nowCharacterData.bodyType = bodyType;
+        ShowBodyPreview(bodyType);
+        RefreshBodySettingButtons();
+    }
+
+    private void BindUniformCollarButtons()
+    {
+        BindBodySettingButtons("UniformCollar", 2, uniformCollarButtons, value =>
+        {
+            nowCharacterData.bodyDetailFlags =
+                (nowCharacterData.bodyDetailFlags & unchecked((int)0xffff0000)) | value;
+            foreach (GameObject preview in bodyPreviews.Values)
+                if (preview != null) ConfigureBodyPreview(preview);
+            RefreshBodySettingButtons();
+        });
+    }
+
+    private void BindChestSizeButtons()
+    {
+        BindBodySettingButtons("ChestSize", 3, chestSizeButtons, value =>
+        {
+            if (nowCharacterData.chestSize == value) return;
+            nowCharacterData.chestSize = value;
+            int bodyType = nowCharacterData.bodyType;
+            ClearBodyPreviews();
+            try
+            {
+                PreloadBodyPreviews();
+                CaptureBodyAnchorBaseline(bodyType);
+                ShowBodyPreview(bodyType);
+            }
+            catch (Exception exception)
+            {
+                ClearBodyPreviews();
+                Debug.LogException(exception);
+            }
+            RefreshBodySettingButtons();
+        });
+    }
+
+    private void BindEquipmentButtons()
+    {
+        BindBodySettingButtons("Equipment", 2, equipmentButtons, value =>
+        {
+            nowCharacterData.bodyDetailFlags =
+                (nowCharacterData.bodyDetailFlags & 0xffff) | (value << 16);
+            RefreshBodySettingButtons();
+        });
+    }
+
+    private void BindBodySettingButtons(
+        string groupName,
+        int expectedCount,
+        List<Button> destination,
+        UnityAction<int> callback)
+    {
+        destination.Clear();
+        if (bodyTypeParent == null) return;
+        Transform group = bodyTypeParent.Find(groupName);
+        if (group == null) return;
+        Transform buttons = group.Find("btns") ?? group;
+        for (int i = 0; i < buttons.childCount && destination.Count < expectedCount; i++)
+        {
+            Button button = buttons.GetChild(i).GetComponent<Button>();
+            if (button == null) continue;
+            int value = destination.Count;
+            button.onClick.AddListener(() => callback(value));
+            destination.Add(button);
+        }
+        if (destination.Count != expectedCount)
+            Debug.LogWarning(groupName + " 需要 " + expectedCount + " 個按鈕，目前找到 " + destination.Count + " 個。");
+    }
+
+    private void RefreshBodySettingButtons()
+    {
+        SetSelectedButton(bodyTypeButtons, nowCharacterData.bodyType - 1);
+        SetSelectedButton(uniformCollarButtons, nowCharacterData.bodyDetailFlags & 0xffff);
+        SetSelectedButton(equipmentButtons, (nowCharacterData.bodyDetailFlags >> 16) & 0xffff);
+        SetSelectedButton(chestSizeButtons, nowCharacterData.chestSize);
+    }
+
+    private static void SetSelectedButton(List<Button> buttons, int selectedIndex)
+    {
+        Color selectedColor = new Color(0.55f, 0.55f, 0.55f, 1f);
+        for (int i = 0; i < buttons.Count; i++)
+            if (buttons[i] != null && buttons[i].image != null)
+                buttons[i].image.color = i == selectedIndex ? selectedColor : Color.white;
+    }
+
+    private void LoadCharacterBody(string characterId)
+    {
+        ClearBodyPreviews();
+        nowCharacterData.originalBodyType = nowCharacterData.bodyType = 1;
+        nowCharacterData.originalChestSize = nowCharacterData.chestSize = 0;
+        nowCharacterData.originalBodyDetailFlags = nowCharacterData.bodyDetailFlags = 0;
+        selectedCharacterRow = selectedModelRow = selectedOriginalBodyRow = null;
+        if (bodyParent == null || string.IsNullOrWhiteSpace(characterId)) return;
+        try
+        {
+            LoadBodyTables();
+            selectedCharacterRow = bodyBaseTable.Rows.SingleOrDefault(row =>
+                row.Name == "CHARA_BASE_INFO" && row.Values.Length > 6 &&
+                string.Equals(row.Text(1), characterId, StringComparison.OrdinalIgnoreCase));
+            if (selectedCharacterRow == null)
+                throw new InvalidDataException("找不到角色身體設定：" + characterId);
+            uint modelId = selectedCharacterRow.UInt(6);
+            selectedModelRow = bodyModelTable.Rows.SingleOrDefault(row =>
+                row.Name == "CHARA_MODEL_INFO" && row.Values.Length > 31 && row.UInt(0) == modelId);
+            if (selectedModelRow == null)
+                throw new InvalidDataException(characterId + " 找不到 CHARA_MODEL_INFO：" + modelId.ToString("X8"));
+            Color characterSkinColor = DecodeSkinColor(selectedModelRow.UInt(16));
+            if (SkinColor != null) SkinColor.color = characterSkinColor;
+            appliedSkinColor = characterSkinColor;
+            hasAppliedSkinColor = true;
+            uint bodyId = selectedModelRow.UInt(4);
+            selectedOriginalBodyRow = bodyModelTable.Rows.FirstOrDefault(row =>
+                row.Values != null && row.Values.Length >= 7 && row.Types != null &&
+                row.Types.Length >= 7 && row.Types[0] == 1 && row.UInt(0) == bodyId);
+            if (selectedOriginalBodyRow == null)
+                throw new InvalidDataException(characterId + " 找不到 CHARA_BODY_INFO：" + bodyId.ToString("X8"));
+            if (!IsBodyInfoRow(selectedOriginalBodyRow))
+                throw new InvalidDataException(characterId + " 的身體資料 " + bodyId.ToString("X8") +
+                    " 沒有有效的 _uniform/sh*.g4md 路徑。");
+
+            int bodyType = checked((int)selectedOriginalBodyRow.Int(5) + 1);
+            if (bodyType < 1 || bodyType > 6) bodyType = 1;
+            int chest = checked((int)selectedModelRow.Int(31));
+            int details = unchecked((int)(selectedModelRow.UInt(12) & 0xffffu) |
+                (int)((selectedModelRow.UInt(13) & 0xffffu) << 16));
+            nowCharacterData.originalBodyType = nowCharacterData.bodyType = bodyType;
+            nowCharacterData.originalChestSize = nowCharacterData.chestSize = chest;
+            nowCharacterData.originalBodyDetailFlags = nowCharacterData.bodyDetailFlags = details;
+            previewUniformStem = FindFirstUniformStem();
+            PreloadBodyPreviews();
+            CaptureBodyAnchorBaseline(bodyType);
+            ShowBodyPreview(bodyType);
+            RefreshBodySettingButtons();
+        }
+        catch (Exception exception)
+        {
+            ClearBodyPreviews();
+            LoadDefaultBodyPreviews();
+            Debug.LogWarning(characterId + " 無法讀取原角色身體設定，已使用預設 Body Type 1：" + exception.Message);
+        }
+    }
+
+    private void LoadDefaultBodyPreviews()
+    {
+        if (bodyParent == null || string.IsNullOrEmpty(DumpDataManager.CommonPath) ||
+            string.IsNullOrEmpty(DumpDataManager.Dx11Path)) return;
+        ClearBodyPreviews();
+        nowCharacterData.originalBodyType = nowCharacterData.bodyType = 1;
+        nowCharacterData.originalChestSize = nowCharacterData.chestSize = 0;
+        nowCharacterData.originalBodyDetailFlags = nowCharacterData.bodyDetailFlags = 0;
+        try
+        {
+            LoadBodyTables();
+            previewUniformStem = FindFirstUniformStem();
+            string[] models = { "u000101", "u000103", "u000105", "u000106", "u000102", "u000108" };
+            for (int i = 0; i < models.Length; i++)
+            {
+                int bodyType = i + 1;
+                string skinName = "sk" + models[i].Substring(1);
+                GameObject preview = CreateBodyPreview(
+                    bodyType,
+                    Path.Combine("chr", "_uniform", "u000101"), models[i], previewUniformStem + "_10",
+                    Path.Combine("chr", "_uniform", "sk000101"), skinName);
+                ConfigureBodyPreview(preview);
+                preview.SetActive(bodyType == 1);
+                bodyPreviews[bodyType] = preview;
+            }
+            CaptureBodyAnchorBaseline(1);
+            RefreshBodySettingButtons();
+        }
+        catch (Exception exception)
+        {
+            ClearBodyPreviews();
+            Debug.LogWarning("預設身體模型載入失敗：" + exception.Message);
+        }
+    }
+
+    private void LoadBodyTables()
+    {
+        string directory = Path.Combine(DumpDataManager.CommonPath, "gamedata", "character");
+        bodyBaseTablePath = FindVersionedTable(directory, "chara_base_");
+        bodyModelTablePath = FindVersionedTable(directory, "chara_model_");
+        bodyBaseTable = CfgTable.Read(File.ReadAllBytes(bodyBaseTablePath), bodyBaseTablePath);
+        bodyModelTable = CfgTable.Read(File.ReadAllBytes(bodyModelTablePath), bodyModelTablePath);
+    }
+
+    private static string FindVersionedTable(string directory, string prefix)
+    {
+        string[] paths = Directory.GetFiles(directory, prefix + "*.cfg.bin")
+            .Where(path => Regex.IsMatch(Path.GetFileName(path), "^" + Regex.Escape(prefix) + @"\d"))
+            .ToArray();
+        if (paths.Length != 1)
+            throw new InvalidDataException("無法唯一判定資料表 " + prefix + "，找到 " + paths.Length + " 個。");
+        return paths[0];
+    }
+
+    private static string FindFirstUniformStem()
+    {
+        const string uniformStem = "u117401";
+        string path = Path.Combine(DumpDataManager.Dx11Path, "chr", "_uniform", "u000101",
+            uniformStem + "_10.g4tx");
+        if (!File.Exists(path))
+            throw new FileNotFoundException("找不到簡約隊服貼圖。", path);
+        return uniformStem;
+    }
+
+    private void PreloadBodyPreviews()
+    {
+        for (int bodyType = 1; bodyType <= 6; bodyType++)
+        {
+            CfgTable.Row row = FindBodyRow(bodyType);
+            if (row == null) continue;
+            string shadowPath = row.Text(2)?.Replace('\\', '/');
+            if (string.IsNullOrWhiteSpace(shadowPath)) continue;
+            string shadowFolder = Path.GetDirectoryName(shadowPath).Replace('\\', '/');
+            string shadowName = Path.GetFileNameWithoutExtension(shadowPath);
+            string modelFolder = shadowFolder.Replace("/sh", "/u");
+            string modelName = shadowName.StartsWith("sh", StringComparison.OrdinalIgnoreCase)
+                ? "u" + shadowName.Substring(2) : shadowName;
+            string textureName = previewUniformStem + "_" + ResolveUniformMember(bodyType, nowCharacterData.chestSize);
+            string skinFolder = shadowFolder.Replace("/sh", "/sk");
+            string skinName = shadowName.StartsWith("sh", StringComparison.OrdinalIgnoreCase)
+                ? "sk" + shadowName.Substring(2) : shadowName;
+            GameObject preview = CreateBodyPreview(
+                bodyType,
+                Path.Combine("chr", modelFolder), modelName, textureName,
+                Path.Combine("chr", skinFolder), skinName);
+            ConfigureBodyPreview(preview);
+            preview.SetActive(false);
+            bodyPreviews[bodyType] = preview;
+        }
+    }
+
+    private GameObject CreateBodyPreview(
+        int bodyType,
+        string uniformFolder,
+        string uniformModel,
+        string uniformTexture,
+        string skinFolder,
+        string skinModel)
+    {
+        var root = new GameObject("BodyType" + bodyType);
+        root.transform.SetParent(bodyParent, false);
+        try
+        {
+            string uniformTextureFolder = Path.Combine("chr", "_uniform", "u000101");
+            GameObject uniform = G4ModelLoader.CreateModel(
+                uniformFolder, uniformModel, uniformTexture, uniformTextureFolder);
+            uniform.transform.SetParent(root.transform, false);
+
+            string skinTexture = Path.GetFileName(skinFolder.TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) + "_10";
+            GameObject skin = G4ModelLoader.CreateModel(skinFolder, skinModel, skinTexture);
+            skin.transform.SetParent(root.transform, false);
+            Color skinColor = GetSelectedSkinColor();
+            TintSkinRenderers(skin, skinColor, false);
+            TintSkinRenderers(uniform, skinColor, true);
+            return root;
+        }
+        catch
+        {
+            DestroyRuntimeObject(root);
+            throw;
+        }
+    }
+
+    private Color GetSelectedSkinColor()
+    {
+        if (SkinColor != null) return SkinColor.color;
+        uint rgba = selectedModelRow != null && selectedModelRow.Values.Length > 16
+            ? selectedModelRow.UInt(16) : 0xFFE4D0FFu;
+        return DecodeSkinColor(rgba);
+    }
+
+    private static Color DecodeSkinColor(uint rgba)
+    {
+        return new Color(
+            ((rgba >> 24) & 0xff) / 255f,
+            ((rgba >> 16) & 0xff) / 255f,
+            ((rgba >> 8) & 0xff) / 255f,
+            (rgba & 0xff) / 255f);
+    }
+
+    private static uint EncodeSkinColor(Color color)
+    {
+        Color32 rgba = color;
+        return ((uint)rgba.r << 24) |
+            ((uint)rgba.g << 16) |
+            ((uint)rgba.b << 8) |
+            rgba.a;
+    }
+
+    private void ApplySkinColorToBodyPreviews(Color skinColor)
+    {
+        foreach (GameObject preview in bodyPreviews.Values)
+        {
+            if (preview == null) continue;
+            foreach (Renderer renderer in preview.GetComponentsInChildren<Renderer>(true))
+            {
+                Material material = renderer.sharedMaterial;
+                if (material != null && material.HasProperty("_SkinColor"))
+                    material.SetColor("_SkinColor", skinColor);
+            }
+        }
+    }
+
+    private static bool ApproximatelySameColor(Color left, Color right)
+    {
+        const float epsilon = 0.0001f;
+        return Mathf.Abs(left.r - right.r) < epsilon &&
+            Mathf.Abs(left.g - right.g) < epsilon &&
+            Mathf.Abs(left.b - right.b) < epsilon &&
+            Mathf.Abs(left.a - right.a) < epsilon;
+    }
+
+    private static void TintSkinRenderers(GameObject model, Color skinColor, bool uniformMaskOnly)
+    {
+        foreach (Renderer renderer in model.GetComponentsInChildren<Renderer>(true))
+        {
+            Material material = renderer.sharedMaterial;
+            if (material == null) continue;
+            if (uniformMaskOnly)
+            {
+                if (material.HasProperty("_SkinColor")) material.SetColor("_SkinColor", skinColor);
+            }
+            else
+            {
+                if (material.HasProperty("_SkinColor")) material.SetColor("_SkinColor", skinColor);
+                if (material.HasProperty("_WholeSkin")) material.SetFloat("_WholeSkin", 1f);
+            }
+        }
+    }
+
+    private CfgTable.Row FindBodyRow(int bodyType)
+    {
+        CfgTable.Row[] rows = bodyModelTable.Rows.Where(row => IsBodyInfoRow(row) &&
+            row.Int(5) == bodyType - 1).ToArray();
+        if (rows.Length == 0) return null;
+        if (selectedOriginalBodyRow != null && selectedOriginalBodyRow.Int(5) == bodyType - 1)
+            return rows.FirstOrDefault(row => row.UInt(0) == selectedOriginalBodyRow.UInt(0)) ?? rows[0];
+        // ChestSize is a CHARA_MODEL_INFO setting.  It is not an index into
+        // CHARA_BODY_INFO; indexing this array made a chest change silently
+        // select an unrelated body group/model.
+        return rows[0];
+    }
+
+    private static bool IsBodyInfoRow(CfgTable.Row row)
+    {
+        if (row == null || row.Values == null || row.Values.Length < 7 || row.Types.Length < 7)
+            return false;
+        if (row.Types[0] != 1 || row.Types[2] != 0 || row.Types[5] != 1 || row.Types[6] != 1)
+            return false;
+        string path = row.Text(2)?.Replace('\\', '/');
+        return !string.IsNullOrWhiteSpace(path) &&
+            path.StartsWith("_uniform/sh", StringComparison.OrdinalIgnoreCase) &&
+            path.EndsWith(".g4md", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveUniformMember(int bodyType, int chestSize)
+    {
+        int gender = selectedCharacterRow != null && selectedCharacterRow.Values.Length > 11
+            ? checked((int)selectedCharacterRow.Int(11)) : 1;
+        return gender == 1 ? "10" : "20";
+    }
+
+    private void ConfigureBodyPreview(GameObject preview)
+    {
+        int bodyLayer = LayerMask.NameToLayer("Body");
+        if (bodyLayer < 0)
+            Debug.LogWarning("找不到 Body layer，身體可能會被頭像相機拍到。");
+        else SetLayerRecursively(preview.transform, bodyLayer);
+
+        int collar = nowCharacterData.bodyDetailFlags & 0xffff;
+        foreach (Transform child in preview.GetComponentsInChildren<Transform>(true))
+        {
+            if (child == preview.transform) continue;
+            if (child.name.IndexOf("_LOD1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                child.name.IndexOf("_LOD2", StringComparison.OrdinalIgnoreCase) >= 0)
+                child.gameObject.SetActive(false);
+            else if (child.name.Equals("collar_10", StringComparison.OrdinalIgnoreCase))
+                child.gameObject.SetActive(collar == 0);
+            else if (child.name.Equals("collar_11", StringComparison.OrdinalIgnoreCase))
+                child.gameObject.SetActive(collar != 0);
+        }
+    }
+
+    private void ExcludeBodyLayerFromIconCamera()
+    {
+        int bodyLayer = LayerMask.NameToLayer("Body");
+        if (bodyLayer < 0)
+        {
+            Debug.LogWarning("找不到 Body layer，無法設定頭像相機過濾。");
+            return;
+        }
+        if (charIconCamera != null)
+            charIconCamera.cullingMask &= ~(1 << bodyLayer);
+    }
+
+    private static void SetLayerRecursively(Transform root, int layer)
+    {
+        if (root == null) return;
+        root.gameObject.layer = layer;
+        for (int i = 0; i < root.childCount; i++)
+            SetLayerRecursively(root.GetChild(i), layer);
+    }
+
+    private void ShowBodyPreview(int bodyType)
+    {
+        foreach (var pair in bodyPreviews) pair.Value.SetActive(pair.Key == bodyType);
+        if (!bodyPreviews.ContainsKey(bodyType) && bodyModelTable != null)
+            Debug.LogWarning("Body Type " + bodyType + " 沒有可用的原生身體模型。");
+        UpdateTargetAnchorForBodyType(bodyType);
+    }
+
+    private void CaptureBodyAnchorBaseline(int bodyType)
+    {
+        hasOriginalBodyTopY = bodyPreviews.TryGetValue(bodyType, out GameObject preview) &&
+            TryGetBodyTopY(preview, out originalBodyTopY);
+    }
+
+    private void UpdateTargetAnchorForBodyType(int bodyType)
+    {
+        if (!hasTargetFaceAnchor || !hasOriginalBodyTopY ||
+            !bodyPreviews.TryGetValue(bodyType, out GameObject preview) ||
+            !TryGetBodyTopY(preview, out float bodyTopY)) return;
+
+        targetFaceAnchor = originalTargetFaceAnchor + Vector3.up * (bodyTopY - originalBodyTopY);
+        ApplyHeadPosition();
+        ApplyHairPosition();
+        ApplyOtherPosition();
+    }
+
+    private bool TryGetBodyTopY(GameObject preview, out float topY)
+    {
+        topY = float.MinValue;
+        if (preview == null || bodyParent == null) return false;
+        bool found = false;
+        foreach (MeshFilter filter in preview.GetComponentsInChildren<MeshFilter>(true))
+        {
+            Mesh mesh = filter.sharedMesh;
+            if (mesh == null) continue;
+            Bounds bounds = mesh.bounds;
+            Matrix4x4 toBodyParent = bodyParent.worldToLocalMatrix * filter.transform.localToWorldMatrix;
+            Vector3 min = bounds.min;
+            Vector3 max = bounds.max;
+            for (int x = 0; x < 2; x++)
+            for (int y = 0; y < 2; y++)
+            for (int z = 0; z < 2; z++)
+            {
+                float pointY = toBodyParent.MultiplyPoint3x4(new Vector3(
+                    x == 0 ? min.x : max.x,
+                    y == 0 ? min.y : max.y,
+                    z == 0 ? min.z : max.z)).y;
+                if (!found || pointY > topY) topY = pointY;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    private void ClearBodyPreviews()
+    {
+        foreach (GameObject preview in bodyPreviews.Values)
+            if (preview != null) DestroyRuntimeObject(preview);
+        bodyPreviews.Clear();
+    }
+
+    private bool HasCharacterSettingsChanges(uint skinRgba)
+    {
+        return nowCharacterData.BodySettingsChanged ||
+            (selectedModelRow != null && selectedModelRow.UInt(16) != skinRgba);
+    }
+
+    private void ExportCharacterSettingsIfChanged(string outputRoot)
+    {
+        if (selectedModelRow == null || selectedOriginalBodyRow == null || string.IsNullOrEmpty(bodyModelTablePath))
+        {
+            if (nowCharacterData.BodySettingsChanged) throw new InvalidDataException("尚未載入替換角色的身體設定。");
+            return;
+        }
+
+        uint skinRgba = EncodeSkinColor(GetSelectedSkinColor());
+        if (!HasCharacterSettingsChanges(skinRgba)) return;
+
+        CfgTable.Row replacementBody = FindBodyRow(nowCharacterData.bodyType);
+        if (replacementBody == null)
+            throw new InvalidDataException(nowCharacterData.id + " 無法對應 Body Type " + nowCharacterData.bodyType + "。");
+
+        CfgTable output = CfgTable.Read(File.ReadAllBytes(bodyModelTablePath), bodyModelTablePath);
+        CfgTable.Row model = output.Rows.Single(row =>
+            row.Name == "CHARA_MODEL_INFO" && row.Values.Length > 31 && row.UInt(0) == selectedModelRow.UInt(0));
+        SetCfgInteger(model, 4, replacementBody.UInt(0));
+        SetCfgInteger(model, 31, nowCharacterData.chestSize);
+        SetCfgInteger(model, 12, nowCharacterData.bodyDetailFlags & 0xffff);
+        SetCfgInteger(model, 13, (nowCharacterData.bodyDetailFlags >> 16) & 0xffff);
+        SetCfgInteger(model, 16, unchecked((int)skinRgba));
+        byte[] bytes = output.Write();
+        CfgTable check = CfgTable.Read(bytes, "身體設定輸出驗證");
+        CfgTable.Row restored = check.Rows.Single(row =>
+            row.Name == "CHARA_MODEL_INFO" && row.Values.Length > 31 && row.UInt(0) == selectedModelRow.UInt(0));
+        if (restored.UInt(4) != replacementBody.UInt(0) ||
+            restored.Int(31) != nowCharacterData.chestSize ||
+            restored.Int(12) != (nowCharacterData.bodyDetailFlags & 0xffff) ||
+            restored.Int(13) != ((nowCharacterData.bodyDetailFlags >> 16) & 0xffff) ||
+            restored.UInt(16) != skinRgba)
+            throw new InvalidDataException("身體設定輸出驗證失敗。");
+
+        string relative = bodyModelTablePath.Substring(DumpDataManager.CommonPath.Length + 1);
+        string destination = Path.Combine(outputRoot, "common", relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination));
+        File.WriteAllBytes(destination, bytes);
+    }
+
+    private static void SetCfgInteger(CfgTable.Row row, int index, long value)
+    {
+        if (index < 0 || index >= row.Values.Length || row.Types[index] != 1)
+            throw new InvalidDataException(row.Name + " 的欄位 " + index + " 不是整數欄位。");
+        row.Values[index] = value;
+    }
+
     void UpdateRightPanel()
     {
         for (int i = 0; i < OptionMainParent.childCount; i++)
@@ -802,6 +1444,7 @@ public class CharacterManager : MonoBehaviour
             File.WriteAllBytes(Path.Combine(commonOutput, nowCharacterData.id + ".g4mg"), result.Geometry);
             File.WriteAllBytes(Path.Combine(dx11Output, nowCharacterData.id + ".g4tx"), result.Textures);
             File.WriteAllBytes(Path.Combine(portraitOutput, nowCharacterData.id + "_l.g4tx"), portrait);
+            ExportCharacterSettingsIfChanged(folders[0]);
 
             Debug.Log("匯出完成：" + folders[0]);
         }
@@ -1797,8 +2440,320 @@ public class CharacterManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        ClearBodyPreviews();
         ClearImportedTextures(1, false);
         ClearImportedTextures(2, false);
         ClearImportedTextures(3, false);
+    }
+
+    public void OnClickSave()
+    {
+        string defaultName = string.IsNullOrWhiteSpace(nowCharacterData.id)
+            ? "character-maker" : nowCharacterData.id;
+        string path = StandaloneFileBrowser.SaveFilePanel(
+            "儲存 CharacterMaker 狀態", "", defaultName, "charamaker");
+        if (string.IsNullOrWhiteSpace(path)) return;
+        if (!path.EndsWith(".charamaker", StringComparison.OrdinalIgnoreCase))
+            path += ".charamaker";
+
+        try
+        {
+            var document = new CharacterMakerSave
+            {
+                version = 1,
+                targetId = nowCharacterData.id,
+                head = MakeSavedPart(1, nowCharacterData.headId),
+                hair = MakeSavedPart(2, nowCharacterData.hairId),
+                other = MakeSavedPart(3, nowCharacterData.otherId),
+                bodyType = nowCharacterData.bodyType,
+                chestSize = nowCharacterData.chestSize,
+                uniformCollar = nowCharacterData.bodyDetailFlags & 0xffff,
+                equipmentFlag2 = (nowCharacterData.bodyDetailFlags >> 16) & 0xffff,
+                skinColor = GetSelectedSkinColor()
+            };
+            foreach (var pair in importedTextures.OrderBy(value => value.Key))
+            {
+                ImportedTexture imported = pair.Value;
+                if (imported == null || imported.Dds == null) continue;
+                int separator = pair.Key.IndexOf(':');
+                if (separator <= 0 || !int.TryParse(pair.Key.Substring(0, separator), out int option)) continue;
+                document.textures.Add(new SavedTexture
+                {
+                    option = option,
+                    sourceId = imported.SourceId,
+                    role = imported.Role,
+                    ddsBase64 = Convert.ToBase64String(imported.Dds)
+                });
+            }
+            File.WriteAllText(path, JsonUtility.ToJson(document, true), new System.Text.UTF8Encoding(false));
+            Debug.Log("CharacterMaker 狀態已儲存：" + path);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+        }
+    }
+
+    public void OnClickLoad()
+    {
+        string[] paths = StandaloneFileBrowser.OpenFilePanel(
+            "讀取 CharacterMaker 狀態", "", "charamaker", false);
+        if (paths == null || paths.Length == 0 || string.IsNullOrWhiteSpace(paths[0])) return;
+
+        try
+        {
+            CharacterMakerSave document = JsonUtility.FromJson<CharacterMakerSave>(File.ReadAllText(paths[0]));
+            if (document == null || document.version != 1)
+                throw new InvalidDataException("不支援的 CharacterMaker 存檔版本。");
+
+            var warnings = new List<string>();
+            RestoreSavedModel(0, document.targetId, warnings);
+            RestoreSavedModel(1, document.head?.sourceId, warnings);
+            RestoreSavedModel(2, document.hair?.sourceId, warnings);
+            RestoreSavedModel(3, document.other?.sourceId, warnings);
+
+            RestoreSavedTransform(1, document.head, warnings);
+            RestoreSavedTransform(2, document.hair, warnings);
+            RestoreSavedTransform(3, document.other, warnings);
+            RestoreSavedBody(document, warnings);
+            RestoreSavedTextures(document.textures, warnings);
+
+            RefreshAllTransformInputs();
+            RefreshBodySettingButtons();
+            for (int option = 1; option <= 3; option++) RefreshTextureImages(option);
+            Debug.Log("CharacterMaker 狀態已讀取：" + paths[0]);
+            if (warnings.Count > 0)
+                Debug.LogWarning("部分內容未能恢復：\n- " + string.Join("\n- ", warnings));
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+        }
+    }
+
+    private SavedPart MakeSavedPart(int option, string sourceId)
+    {
+        GetExtraTransform(option, out Vector3 position, out Vector3 rotation, out Vector3 scale);
+        return new SavedPart { sourceId = sourceId, position = position, rotation = rotation, scale = scale };
+    }
+
+    private static bool IsSafeCharacterId(string id)
+    {
+        return !string.IsNullOrWhiteSpace(id) && Regex.IsMatch(id, @"^[A-Za-z0-9_]+$");
+    }
+
+    private bool RestoreSavedModel(int option, string sourceId, List<string> warnings)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId)) return false;
+        if (!IsSafeCharacterId(sourceId))
+        {
+            warnings.Add(OptionName(option) + " 的角色 ID 無效：" + sourceId);
+            return false;
+        }
+
+        GameObject loaded = null;
+        try
+        {
+            string relative = FindFaceModel(sourceId).Replace('\\', '/');
+            string relativeFolder = Path.GetDirectoryName(relative).Replace('\\', '/');
+            string modelName = Path.GetFileNameWithoutExtension(relative);
+            loaded = G4ModelLoader.CreateModel(Path.Combine("chr", "_face", relativeFolder), modelName);
+            loaded.name = sourceId;
+            CenterSelectionPreview(loaded.transform);
+            int nonFaceCount = loaded.transform.Cast<Transform>().Count(child =>
+                !child.name.StartsWith("eye_", StringComparison.OrdinalIgnoreCase) &&
+                !child.name.StartsWith("mouth_", StringComparison.OrdinalIgnoreCase));
+            if (option == 2 && nonFaceCount < 1)
+                throw new InvalidDataException(sourceId + " 沒有 Hair 模型。");
+            if (option == 3 && nonFaceCount < 2)
+                throw new InvalidDataException(sourceId + " 沒有第二個非臉部模型。");
+
+            bool hasFaceAnchor = TryGetFaceAnchor(loaded.transform, out Vector3 faceAnchor);
+            if (option >= 1) ClearImportedTextures(option, false);
+            Transform target = showSelectModel.GetChild(option);
+            for (int i = target.childCount - 1; i >= 0; i--)
+                DestroyRuntimeObject(target.GetChild(i).gameObject);
+            loaded.transform.SetParent(target, false);
+            nowCharacterData.SetData(option, loaded.transform);
+
+            if (option == 0)
+            {
+                hasTargetFaceAnchor = hasFaceAnchor;
+                originalTargetFaceAnchor = targetFaceAnchor = faceAnchor;
+                hasOriginalBodyTopY = false;
+                ApplyHeadPosition(); ApplyHairPosition(); ApplyOtherPosition();
+                LoadCharacterBody(sourceId);
+            }
+            else if (option == 1)
+            {
+                hasHeadSourceFaceAnchor = hasFaceAnchor;
+                headSourceFaceAnchor = faceAnchor;
+                RememberBaseTransforms(nowCharacterData.head, headBasePositions, headBaseRotations, headBaseScales);
+                ApplyHeadPosition();
+            }
+            else if (option == 2)
+            {
+                hasHairSourceFaceAnchor = hasFaceAnchor;
+                hairSourceFaceAnchor = faceAnchor;
+                RememberBaseTransforms(nowCharacterData.hair, hairBasePositions, hairBaseRotations, hairBaseScales);
+                ApplyHairPosition();
+            }
+            else
+            {
+                hasOtherSourceFaceAnchor = hasFaceAnchor;
+                otherSourceFaceAnchor = faceAnchor;
+                RememberBaseTransforms(nowCharacterData.other, otherBasePositions, otherBaseRotations, otherBaseScales);
+                ApplyOtherPosition();
+            }
+            loaded = null;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            if (loaded != null) DestroyRuntimeObject(loaded);
+            warnings.Add(OptionName(option) + "（" + sourceId + "）：" + exception.Message);
+            return false;
+        }
+    }
+
+    private static void CenterSelectionPreview(Transform model)
+    {
+        if (model == null) return;
+        Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0) return;
+        // Keep the same centering rule used by ShowFaceItems so SelectCamera
+        // renders a model restored directly from an ID in the same place.
+        model.position -= renderers[renderers.Length - 1].bounds.center;
+    }
+
+    private void RestoreSavedTransform(int option, SavedPart part, List<string> warnings)
+    {
+        if (part == null || string.IsNullOrWhiteSpace(part.sourceId)) return;
+        TryGetOptionSelection(option, out string currentId, out Transform[] selected);
+        if (!string.Equals(currentId, part.sourceId, StringComparison.OrdinalIgnoreCase) ||
+            selected == null || selected.Length == 0) return;
+        if (!IsFinite(part.position) || !IsFinite(part.rotation) || !IsPositiveFinite(part.scale))
+        {
+            warnings.Add(OptionName(option) + " 的 Transform 無效，已保留目前值。");
+            return;
+        }
+        SetExtraTransform(option, part.position, part.rotation, part.scale);
+        ApplyExtraTransform(option);
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.x) && float.IsFinite(value.y) && float.IsFinite(value.z);
+    }
+
+    private static bool IsPositiveFinite(Vector3 value)
+    {
+        return IsFinite(value) && value.x > 0f && value.y > 0f && value.z > 0f;
+    }
+
+    private void RestoreSavedBody(CharacterMakerSave document, List<string> warnings)
+    {
+        if (string.IsNullOrWhiteSpace(document.targetId) ||
+            !string.Equals(nowCharacterData.id, document.targetId, StringComparison.OrdinalIgnoreCase)) return;
+        if (document.bodyType < 1 || document.bodyType > 6 ||
+            document.chestSize < 0 || document.chestSize > 2 ||
+            document.uniformCollar < 0 || document.uniformCollar > 1 ||
+            document.equipmentFlag2 < 0 || document.equipmentFlag2 > 1 ||
+            !IsUnitColor(document.skinColor))
+        {
+            warnings.Add("身體設定無效，已保留目標角色的目前設定。");
+            return;
+        }
+        int previousBodyType = nowCharacterData.bodyType;
+        int previousChestSize = nowCharacterData.chestSize;
+        int previousDetails = nowCharacterData.bodyDetailFlags;
+        Color previousSkinColor = GetSelectedSkinColor();
+        try
+        {
+            nowCharacterData.bodyType = document.bodyType;
+            nowCharacterData.chestSize = document.chestSize;
+            nowCharacterData.bodyDetailFlags = document.uniformCollar | (document.equipmentFlag2 << 16);
+            if (SkinColor != null) SkinColor.color = document.skinColor;
+            appliedSkinColor = document.skinColor;
+            hasAppliedSkinColor = true;
+            ClearBodyPreviews();
+            PreloadBodyPreviews();
+            CaptureBodyAnchorBaseline(document.bodyType);
+            ShowBodyPreview(document.bodyType);
+            ApplySkinColorToBodyPreviews(document.skinColor);
+        }
+        catch (Exception exception)
+        {
+            nowCharacterData.bodyType = previousBodyType;
+            nowCharacterData.chestSize = previousChestSize;
+            nowCharacterData.bodyDetailFlags = previousDetails;
+            if (SkinColor != null) SkinColor.color = previousSkinColor;
+            appliedSkinColor = previousSkinColor;
+            try
+            {
+                ClearBodyPreviews();
+                PreloadBodyPreviews();
+                CaptureBodyAnchorBaseline(previousBodyType);
+                ShowBodyPreview(previousBodyType);
+                ApplySkinColorToBodyPreviews(previousSkinColor);
+            }
+            catch (Exception rollbackException)
+            {
+                Debug.LogException(rollbackException);
+            }
+            warnings.Add("身體設定：" + exception.Message);
+        }
+    }
+
+    private static bool IsUnitColor(Color color)
+    {
+        return float.IsFinite(color.r) && float.IsFinite(color.g) &&
+            float.IsFinite(color.b) && float.IsFinite(color.a) &&
+            color.r >= 0f && color.r <= 1f && color.g >= 0f && color.g <= 1f &&
+            color.b >= 0f && color.b <= 1f && color.a >= 0f && color.a <= 1f;
+    }
+
+    private void RestoreSavedTextures(List<SavedTexture> textures, List<string> warnings)
+    {
+        if (textures == null) return;
+        foreach (SavedTexture saved in textures)
+        {
+            Texture2D preview = null;
+            try
+            {
+                if (saved == null || saved.option < 1 || saved.option > 3 ||
+                    string.IsNullOrWhiteSpace(saved.role) || TextureChannel(saved.role) == null)
+                    throw new InvalidDataException("貼圖記錄格式無效。");
+                TryGetOptionSelection(saved.option, out string sourceId, out Transform[] selected);
+                if (!string.Equals(sourceId, saved.sourceId, StringComparison.OrdinalIgnoreCase) ||
+                    selected == null || selected.Length == 0)
+                    throw new InvalidDataException("來源模型未恢復，因此略過貼圖。");
+                byte[] dds = Convert.FromBase64String(saved.ddsBase64 ?? "");
+                G4TextureParser.TextureData importedInfo = G4TextureParser.ParseDDS(dds, saved.role);
+                RawTexture original = FindCurrentTexture(saved.option, sourceId, selected, saved.role);
+                G4TextureParser.TextureData originalInfo = G4TextureParser.ParseDDS(original.Dds, original.Name);
+                ValidateImportedDimensions(originalInfo, importedInfo);
+                bool linear = saved.role.EndsWith("oc", StringComparison.OrdinalIgnoreCase) ||
+                    saved.role.EndsWith("spm", StringComparison.OrdinalIgnoreCase);
+                string textureName = sourceId + "_" + saved.role.ToLowerInvariant();
+                preview = CreatePreviewTexture(dds, textureName, linear);
+                ClearImportedTexture(saved.option, saved.role, false);
+                importedTextures[ImportKey(saved.option, saved.role)] = new ImportedTexture
+                {
+                    SourceId = sourceId,
+                    Role = saved.role.ToLowerInvariant(),
+                    Dds = dds,
+                    Preview = preview
+                };
+                preview = null;
+                EnsurePreviewMaterials(saved.option, selected);
+                ApplyImportedPreviews(saved.option);
+            }
+            catch (Exception exception)
+            {
+                if (preview != null) DestroyRuntimeObject(preview);
+                warnings.Add("貼圖 " + (saved?.role ?? "未知") + "：" + exception.Message);
+            }
+        }
     }
 }
