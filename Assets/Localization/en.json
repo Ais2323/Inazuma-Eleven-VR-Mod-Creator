@@ -2,6 +2,8 @@
     "dirPlaceholder": "Enter File Path...",
     "browse": "Browse",
     "loadDump": "Load Dump",
+    "dumpPathTitle": "Dump Path",
+    "localizationTitle": "Localization",
     "CharacterMaker": "Character Maker",
     "UniformMaker": "Uniform Maker",
     "ChronicleMaker": "Chronicle Maker",

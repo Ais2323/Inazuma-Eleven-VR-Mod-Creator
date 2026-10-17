@@ -2,6 +2,8 @@
     "dirPlaceholder": "輸入檔案路徑...",
     "browse": "選擇資料夾",
     "loadDump": "載入來源檔",
+    "dumpPathTitle": "來源檔路徑",
+    "localizationTitle": "語言",
     "CharacterMaker": "角色編輯器",
     "UniformMaker": "隊服編輯器",
     "ChronicleMaker": "編年史編輯器",

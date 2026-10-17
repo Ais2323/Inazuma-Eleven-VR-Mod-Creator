@@ -19,21 +19,25 @@ public class StartSceneUIController : BaseUIController
     {
         dirInputField.text = SettingManager.Settings["path"];
         path = dirInputField.text;
-        LoadDumpBtn.interactable = !string.IsNullOrWhiteSpace(path);
-        if (DumpDataManager.ValidateSavedPath()) SceneManager.LoadSceneAsync(endSceneName);
+        if (LoadDumpBtn) LoadDumpBtn.interactable = !string.IsNullOrWhiteSpace(path);
+        if (endSceneName != "")
+        {
+            if (DumpDataManager.ValidateSavedPath()) SceneManager.LoadSceneAsync(endSceneName);
+        }
+        
     }
 
     public override void UpdateLocalization()
     {
         DirPlaceholderText.text = LocalizationManager.GetText("dirPlaceholder");
         BrowseText.text = LocalizationManager.GetText("browse");
-        LoadDump.text = LocalizationManager.GetText("loadDump");
+        if (LoadDump) LoadDump.text = LocalizationManager.GetText("loadDump");
     }
 
     public void OnChangePath(string _)
     {
         path = dirInputField.text;
-        LoadDumpBtn.interactable = path != "";
+        if (LoadDumpBtn) LoadDumpBtn.interactable = path != "";
     }
 
     public void OnClickBrowse()
@@ -57,6 +61,9 @@ public class StartSceneUIController : BaseUIController
             Debug.LogWarning("Dump Path is invalid");
             return;
         }
-        SceneManager.LoadSceneAsync(endSceneName);
+        if (endSceneName != "")
+        {
+            SceneManager.LoadSceneAsync(endSceneName);
+        }
     }
 }

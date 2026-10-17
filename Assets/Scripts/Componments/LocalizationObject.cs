@@ -7,7 +7,7 @@ public class LocalizationObject : BaseUIController
 
     public override void UpdateLocalization()
     {
-        target.text = LocalizationManager.GetText(targetLoc);
+        if (target) target.text = LocalizationManager.GetText(targetLoc);
     }
 
     void Awake()
