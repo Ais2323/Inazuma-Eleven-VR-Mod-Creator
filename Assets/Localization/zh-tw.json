@@ -1,4 +1,5 @@
 {
+    "AppTitle": "閃電十一人 勝利之路模組編輯器",
     "dirPlaceholder": "輸入檔案路徑...",
     "browse": "選擇資料夾",
     "loadDump": "載入來源檔",
@@ -6,7 +7,9 @@
     "localizationTitle": "語言",
     "CharacterMaker": "角色編輯器",
     "UniformMaker": "隊服編輯器",
+    "SkillMaker": "必殺技編輯器",
     "ChronicleMaker": "編年史編輯器",
+    "MergeExport": "合併輸出",
     "Setting": "設置",
     "CharacterInfo": "人物資訊",
     "Head": "頭型",
@@ -26,5 +29,6 @@
     "Rotation": "旋轉",
     "Scale": "縮放",
     "Save": "儲存",
-    "Load": "讀檔"
+    "Load": "讀檔",
+    "Open": "開啟"
 }

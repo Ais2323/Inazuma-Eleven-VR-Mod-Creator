@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -196,40 +196,6 @@ public class CharacterManager : MonoBehaviour
         public string Role;
         public byte[] Dds;
         public Texture2D Preview;
-    }
-
-    [Serializable]
-    private sealed class CharacterMakerSave
-    {
-        public int version;
-        public string targetId;
-        public SavedPart head = new();
-        public SavedPart hair = new();
-        public SavedPart other = new();
-        public int bodyType = 1;
-        public int chestSize;
-        public int uniformCollar;
-        public int equipmentFlag2;
-        public Color skinColor = Color.white;
-        public List<SavedTexture> textures = new();
-    }
-
-    [Serializable]
-    private sealed class SavedPart
-    {
-        public string sourceId;
-        public Vector3 position;
-        public Vector3 rotation;
-        public Vector3 scale = Vector3.one;
-    }
-
-    [Serializable]
-    private sealed class SavedTexture
-    {
-        public int option;
-        public string sourceId;
-        public string role;
-        public string ddsBase64;
     }
 
     private readonly Dictionary<string, ImportedTexture> importedTextures = new();
@@ -1370,90 +1336,6 @@ public class CharacterManager : MonoBehaviour
         OptionSubParent.gameObject.SetActive(true);
     }
 
-    public void OnClickExport()
-    {
-        string[] folders = StandaloneFileBrowser.OpenFolderPanel("選擇輸出 data 資料夾", "", false);
-        if (folders == null || folders.Length == 0 || string.IsNullOrEmpty(folders[0])) return;
-
-        try
-        {
-            string targetRelativePath = FindFaceModel(nowCharacterData.id);
-            string headRelativePath = FindFaceModel(nowCharacterData.headId);
-            string hairRelativePath = FindFaceModel(nowCharacterData.hairId);
-
-            RawHeadAsset target = RawHeadAsset.Read(DumpDataManager.CommonPath, DumpDataManager.Dx11Path,
-                targetRelativePath, CancellationToken.None);
-            RawHeadAsset head = RawHeadAsset.Read(DumpDataManager.CommonPath, DumpDataManager.Dx11Path,
-                headRelativePath, CancellationToken.None);
-            RawHeadAsset hair = RawHeadAsset.Read(DumpDataManager.CommonPath, DumpDataManager.Dx11Path,
-                hairRelativePath, CancellationToken.None);
-            RawHeadAsset other = null;
-            if (!string.IsNullOrEmpty(nowCharacterData.otherId) &&
-                nowCharacterData.other != null && nowCharacterData.other.Length > 0)
-            {
-                string otherRelativePath = FindFaceModel(nowCharacterData.otherId);
-                other = RawHeadAsset.Read(DumpDataManager.CommonPath, DumpDataManager.Dx11Path,
-                    otherRelativePath, CancellationToken.None);
-            }
-
-            var sources = new Dictionary<string, RawHeadAsset>(StringComparer.OrdinalIgnoreCase);
-            sources[target.RelativePath] = target;
-            sources[head.RelativePath] = head;
-            sources[hair.RelativePath] = hair;
-            if (other != null) sources[other.RelativePath] = other;
-
-            var document = new CompositionDocument();
-            AddExportParts(document, hair, nowCharacterData.hair,
-                CalculateExportPosition(
-                    hairPositionOffset, nowCharacterData.hairTransformStartPosition,
-                    nowCharacterData.hairExtraPosition, nowCharacterData.hairExtraRotation,
-                    nowCharacterData.hairExtraScale),
-                nowCharacterData.hairExtraRotation, nowCharacterData.hairExtraScale);
-            if (other != null)
-                AddExportParts(document, other, nowCharacterData.other,
-                    CalculateExportPosition(
-                        otherPositionOffset, nowCharacterData.otherTransformStartPosition,
-                        nowCharacterData.otherExtraPosition, nowCharacterData.otherExtraRotation,
-                        nowCharacterData.otherExtraScale),
-                    nowCharacterData.otherExtraRotation, nowCharacterData.otherExtraScale);
-            AddExportParts(document, head, nowCharacterData.head,
-                CalculateExportPosition(
-                    headPositionOffset, nowCharacterData.headTransformStartPosition,
-                    nowCharacterData.headExtraPosition, nowCharacterData.headExtraRotation,
-                    nowCharacterData.headExtraScale),
-                nowCharacterData.headExtraRotation, nowCharacterData.headExtraScale);
-
-            G4CompositionWriter.Result result = new G4CompositionWriter().Build(
-                document, sources, target, CancellationToken.None);
-            var optionSources = new Dictionary<int, RawHeadAsset> { { 1, head }, { 2, hair } };
-            if (other != null) optionSources.Add(3, other);
-            result.Textures = ApplySelectedTextures(
-                result.Metadata, result.Geometry, result.Textures, optionSources);
-
-            byte[] portrait = BuildCharacterPortrait(nowCharacterData.id);
-
-            string relativeFolder = Path.GetDirectoryName(targetRelativePath);
-            string commonOutput = Path.Combine(folders[0], "common", "chr", "_face", relativeFolder);
-            string dx11Output = Path.Combine(folders[0], "dx11", "chr", "_face", relativeFolder);
-            string portraitOutput = Path.Combine(folders[0], "dx11", "menu", "200_icon", "10_icon_chr", "face");
-            Directory.CreateDirectory(commonOutput);
-            Directory.CreateDirectory(dx11Output);
-            Directory.CreateDirectory(portraitOutput);
-
-            File.WriteAllBytes(Path.Combine(commonOutput, nowCharacterData.id + ".g4md"), result.Metadata);
-            File.WriteAllBytes(Path.Combine(commonOutput, nowCharacterData.id + ".g4mg"), result.Geometry);
-            File.WriteAllBytes(Path.Combine(dx11Output, nowCharacterData.id + ".g4tx"), result.Textures);
-            File.WriteAllBytes(Path.Combine(portraitOutput, nowCharacterData.id + "_l.g4tx"), portrait);
-            ExportCharacterSettingsIfChanged(folders[0]);
-
-            Debug.Log("匯出完成：" + folders[0]);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogException(ex);
-        }
-    }
-
     private byte[] BuildCharacterPortrait(string characterId)
     {
         if (charIconCamera == null)
@@ -2458,9 +2340,9 @@ public class CharacterManager : MonoBehaviour
 
         try
         {
-            var document = new CharacterMakerSave
+            var document = new CharacterMakerDocument
             {
-                version = 1,
+                version = 2,
                 targetId = nowCharacterData.id,
                 head = MakeSavedPart(1, nowCharacterData.headId),
                 hair = MakeSavedPart(2, nowCharacterData.hairId),
@@ -2477,7 +2359,7 @@ public class CharacterManager : MonoBehaviour
                 if (imported == null || imported.Dds == null) continue;
                 int separator = pair.Key.IndexOf(':');
                 if (separator <= 0 || !int.TryParse(pair.Key.Substring(0, separator), out int option)) continue;
-                document.textures.Add(new SavedTexture
+                document.textures.Add(new CharacterMakerTexture
                 {
                     option = option,
                     sourceId = imported.SourceId,
@@ -2485,7 +2367,15 @@ public class CharacterManager : MonoBehaviour
                     ddsBase64 = Convert.ToBase64String(imported.Dds)
                 });
             }
-            File.WriteAllText(path, JsonUtility.ToJson(document, true), new System.Text.UTF8Encoding(false));
+            try
+            {
+                document.portraitG4txBase64 = Convert.ToBase64String(BuildCharacterPortrait(nowCharacterData.id));
+            }
+            catch (Exception portraitException)
+            {
+                Debug.LogWarning("頭像未寫入 CharacterMaker 存檔：" + portraitException.Message);
+            }
+            document.Write(path);
             Debug.Log("CharacterMaker 狀態已儲存：" + path);
         }
         catch (Exception exception)
@@ -2502,9 +2392,7 @@ public class CharacterManager : MonoBehaviour
 
         try
         {
-            CharacterMakerSave document = JsonUtility.FromJson<CharacterMakerSave>(File.ReadAllText(paths[0]));
-            if (document == null || document.version != 1)
-                throw new InvalidDataException("不支援的 CharacterMaker 存檔版本。");
+            CharacterMakerDocument document = CharacterMakerDocument.Read(paths[0]);
 
             var warnings = new List<string>();
             RestoreSavedModel(0, document.targetId, warnings);
@@ -2531,10 +2419,25 @@ public class CharacterManager : MonoBehaviour
         }
     }
 
-    private SavedPart MakeSavedPart(int option, string sourceId)
+    private CharacterMakerPart MakeSavedPart(int option, string sourceId)
     {
         GetExtraTransform(option, out Vector3 position, out Vector3 rotation, out Vector3 scale);
-        return new SavedPart { sourceId = sourceId, position = position, rotation = rotation, scale = scale };
+        TryGetOptionSelection(option, out _, out Transform[] selected);
+        Vector3 exportPosition = option == 1
+            ? CalculateExportPosition(headPositionOffset, nowCharacterData.headTransformStartPosition, position, rotation, scale)
+            : option == 2
+                ? CalculateExportPosition(hairPositionOffset, nowCharacterData.hairTransformStartPosition, position, rotation, scale)
+                : CalculateExportPosition(otherPositionOffset, nowCharacterData.otherTransformStartPosition, position, rotation, scale);
+        return new CharacterMakerPart
+        {
+            sourceId = sourceId,
+            position = position,
+            rotation = rotation,
+            scale = scale,
+            exportPosition = exportPosition,
+            meshNames = (selected ?? Array.Empty<Transform>()).Where(value => value != null)
+                .Select(value => value.name).ToList()
+        };
     }
 
     private static bool IsSafeCharacterId(string id)
@@ -2626,7 +2529,7 @@ public class CharacterManager : MonoBehaviour
         model.position -= renderers[renderers.Length - 1].bounds.center;
     }
 
-    private void RestoreSavedTransform(int option, SavedPart part, List<string> warnings)
+    private void RestoreSavedTransform(int option, CharacterMakerPart part, List<string> warnings)
     {
         if (part == null || string.IsNullOrWhiteSpace(part.sourceId)) return;
         TryGetOptionSelection(option, out string currentId, out Transform[] selected);
@@ -2651,7 +2554,7 @@ public class CharacterManager : MonoBehaviour
         return IsFinite(value) && value.x > 0f && value.y > 0f && value.z > 0f;
     }
 
-    private void RestoreSavedBody(CharacterMakerSave document, List<string> warnings)
+    private void RestoreSavedBody(CharacterMakerDocument document, List<string> warnings)
     {
         if (string.IsNullOrWhiteSpace(document.targetId) ||
             !string.Equals(nowCharacterData.id, document.targetId, StringComparison.OrdinalIgnoreCase)) return;
@@ -2713,10 +2616,10 @@ public class CharacterManager : MonoBehaviour
             color.b >= 0f && color.b <= 1f && color.a >= 0f && color.a <= 1f;
     }
 
-    private void RestoreSavedTextures(List<SavedTexture> textures, List<string> warnings)
+    private void RestoreSavedTextures(List<CharacterMakerTexture> textures, List<string> warnings)
     {
         if (textures == null) return;
-        foreach (SavedTexture saved in textures)
+        foreach (CharacterMakerTexture saved in textures)
         {
             Texture2D preview = null;
             try

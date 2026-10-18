@@ -15,6 +15,9 @@ EditorBuildSettings:
     path: Assets/Scenes/CharacterMaker.unity
     guid: ead46d5ee5a206e4f9c0eb5bba5eb157
   - enabled: 1
+    path: Assets/Scenes/MergeScene.unity
+    guid: 75587eb948f9d6647aa3b2500d025073
+  - enabled: 1
     path: Assets/Scenes/SettingScene.unity
     guid: 3f6989c70235caa4ea307664090b3bdb
   m_configObjects:

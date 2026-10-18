@@ -1,4 +1,5 @@
 {
+    "AppTitle": "Inazuma Eleven VR Mod Creator",
     "dirPlaceholder": "Enter File Path...",
     "browse": "Browse",
     "loadDump": "Load Dump",
@@ -6,7 +7,9 @@
     "localizationTitle": "Localization",
     "CharacterMaker": "Character Maker",
     "UniformMaker": "Uniform Maker",
+    "SkillMaker": "Skill Maker",
     "ChronicleMaker": "Chronicle Maker",
+    "MergeExport": "Merge Export",
     "Setting": "Setting",
     "CharacterInfo": "Character Info",
     "Head": "Head",
@@ -26,5 +29,6 @@
     "Rotation": "Rotation",
     "Scale": "Scale",
     "Save": "Save",
-    "Load": "Load"
+    "Load": "Load",
+    "Open": "Open"
 }
