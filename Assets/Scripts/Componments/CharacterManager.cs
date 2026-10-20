@@ -250,7 +250,6 @@ public class CharacterManager : MonoBehaviour
 
     private static string[] seriesNames = new string[]
     {
-      "20_EDIT",
       "01_IE1",
       "02_IE2",
       "03_IE3",
@@ -270,8 +269,7 @@ public class CharacterManager : MonoBehaviour
             // 給左側按鈕上事件
             Button btn = OptionButtonsParent.GetChild(i).GetComponent<Button>();
             int tempIdx = i;
-            string title = btn.transform.GetChild(0).GetComponent<Text>().text;
-            btn.onClick.AddListener(() => OnClickOption(tempIdx, title));
+            btn.onClick.AddListener(() => OnClickOption(tempIdx));
             optionButtons.Add(btn);
         }
 
@@ -351,11 +349,12 @@ public class CharacterManager : MonoBehaviour
         ApplySkinColorToBodyPreviews(color);
     }
 
-    void OnClickOption(int index, string title)
+    void OnClickOption(int index)
     {
         nowSelectOption = index;
         nowSeriesIdx = 0;
-        MainTitle.text = title;
+        Text buttonLabel = optionButtons[index].transform.GetChild(0).GetComponent<Text>();
+        MainTitle.text = buttonLabel.text;
         UpdateRightPanel();
     }
 

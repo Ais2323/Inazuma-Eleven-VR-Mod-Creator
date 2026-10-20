@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,12 +22,16 @@ namespace G4Runtime
         public sealed class Part
         {
             public int SourceMeshIndex;
+            public uint NodeHash;
             public string Name;
             public int Material;
             public Vector3[] Positions, Normals;
             public Vector2[] UV;
             public Color32[] Colors;
             public int[] Indices;
+            public uint[] BonePalette;
+            public byte[,] BoneIndices;
+            public ushort[,] BoneWeights;
         }
         public sealed class Surface
         {
@@ -142,13 +146,33 @@ namespace G4Runtime
                 int layoutIndex = md.U8(o + 0x42), mat = md.U8(o + 0x43);
                 if (layoutIndex >= layouts.Count || mat >= materialCount) throw new InvalidDataException(source + ": invalid layout/material index.");
                 var layout = layouts[layoutIndex];
-                var part = new Part { SourceMeshIndex = i, Name = meshNames[i], Material = mat, Positions = new Vector3[vc], Normals = new Vector3[vc], UV = new Vector2[vc], Colors = new Color32[vc], Indices = new int[ic] };
+                int nodeIndex = md.U16(o + 0x38);
+                if (nodeIndex >= md.U16(0x24)) throw new InvalidDataException(source + ": invalid mesh node index.");
+                var part = new Part { SourceMeshIndex = i, NodeHash = md.U32(bias + md.U16(0x74) * 4 + nodeIndex * 4), Name = meshNames[i], Material = mat, Positions = new Vector3[vc], Normals = new Vector3[vc], UV = new Vector2[vc], Colors = new Color32[vc], Indices = new int[ic] };
                 foreach (var e in layout.Values) if (e.Offset >= stride) throw new InvalidDataException(source + ": vertex element outside stride.");
                 layout.TryGetValue(2, out var normal); bool hasNormal = layout.ContainsKey(2);
                 layout.TryGetValue(10, out var uv); bool hasUV = layout.ContainsKey(10);
                 layout.TryGetValue(8, out var color); bool hasColor = layout.ContainsKey(8);
+                layout.TryGetValue(5, out var weights); bool hasWeights = layout.ContainsKey(5) && weights.Format == 32;
+                layout.TryGetValue(6, out var bones); bool hasBones = layout.ContainsKey(6) && bones.Format == 24;
                 if (hasNormal && normal.Offset + 8 > stride || hasColor && color.Offset + 4 > stride || hasUV && uv.Offset + UVSize(uv.Format) > stride)
                     throw new InvalidDataException(source + ": vertex element overruns stride.");
+                if (hasWeights != hasBones || hasWeights && (weights.Offset + 16 > stride || bones.Offset + 8 > stride))
+                    throw new InvalidDataException(source + ": unsupported skin layout.");
+                int paletteCount = (md.U16(o + 0x3c) & 0x100) != 0 ? md.U8(o + 0x3c) : 0;
+                if (hasWeights)
+                {
+                    int paletteStart = md.U16(o + 0x3a);
+                    part.BonePalette = new uint[paletteCount];
+                    part.BoneIndices = new byte[vc, 8];
+                    part.BoneWeights = new ushort[vc, 8];
+                    for (int j = 0; j < paletteCount; j++)
+                    {
+                        int joint = md.U16(bias + md.U16(0x82) * 4 + (paletteStart + j) * 2);
+                        if (joint >= md.U16(0x24)) throw new InvalidDataException(source + ": invalid bone palette.");
+                        part.BonePalette[j] = md.U32(bias + md.U16(0x74) * 4 + joint * 4);
+                    }
+                }
                 for (int v = 0; v < vc; v++)
                 {
                     if ((v & 1023) == 0) token.ThrowIfCancellationRequested();
@@ -162,6 +186,14 @@ namespace G4Runtime
                     }
                     if (hasUV) part.UV[v] = ReadUV(mg, p + uv.Offset, uv.Format);
                     part.Colors[v] = hasColor ? new Color32(mg.U8(p + color.Offset), mg.U8(p + color.Offset + 1), mg.U8(p + color.Offset + 2), mg.U8(p + color.Offset + 3)) : new Color32(255, 255, 255, 255);
+                    if (hasWeights) for (int influence = 0; influence < 8; influence++)
+                    {
+                        part.BoneWeights[v, influence] = mg.U16(p + weights.Offset + influence * 2);
+                        byte localBone = mg.U8(p + bones.Offset + influence);
+                        if (part.BoneWeights[v, influence] != 0 && localBone >= paletteCount)
+                            throw new InvalidDataException(source + ": invalid vertex bone index.");
+                        part.BoneIndices[v, influence] = localBone;
+                    }
                 }
                 if (!hasNormal) part.Normals = null;
                 for (int t = 0; t < ic; t += 3)

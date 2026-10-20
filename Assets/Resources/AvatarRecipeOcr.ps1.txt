@@ -1,0 +1,31 @@
+$ErrorActionPreference = 'Stop'
+try {
+    Add-Type -AssemblyName System.Drawing
+    $source = [System.Drawing.Bitmap]::new($env:AVATAR_RECIPE_IMAGE)
+    try {
+        $sx = $source.Width / 1920.0; $sy = $source.Height / 1080.0
+        $left = 0.0; $top = 0.0
+        if ([Math]::Abs($sx / $sy - 1) -gt .02) {
+            $sx = [Math]::Min($sx,$sy); $sy = $sx
+            $left = ($source.Width - 1920*$sx)/2; $top = ($source.Height - 1080*$sy)/2
+        }
+        $glyphs = @()
+        for ($index=0; $index -lt 77; $index++) {
+            $row = [int][Math]::Floor($index / 20); $column = $index % 20
+            $centerX = 562 + [Math]::Floor($column / 4)*172 + ($column % 4)*36
+            $centerY = 479 + $row*60
+            $pixels = [byte[]]::new(1280)
+            for ($y=0; $y -lt 40; $y++) {
+                for ($x=0; $x -lt 32; $x++) {
+                    $px = [Math]::Min($source.Width-1,[Math]::Max(0,[int][Math]::Round($left+($centerX-16+$x)*$sx)))
+                    $py = [Math]::Min($source.Height-1,[Math]::Max(0,[int][Math]::Round($top+($centerY-20+$y)*$sy)))
+                    $c = $source.GetPixel($px,$py)
+                    $pixels[$y*32+$x] = [byte][Math]::Round(($c.R+$c.G+$c.B)/3)
+                }
+            }
+            $glyphs += [Convert]::ToBase64String($pixels)
+        }
+        $output = @{ glyphs=$glyphs; error='' }
+    } finally { $source.Dispose() }
+} catch { $output = @{ glyphs=@(); error=$_.Exception.Message } }
+[IO.File]::WriteAllText($env:AVATAR_RECIPE_RESULT,($output|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
