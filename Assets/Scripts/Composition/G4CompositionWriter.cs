@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,7 +12,7 @@ namespace G4Composition
     public sealed class G4CompositionWriter
     {
         public sealed class Result { public byte[] Metadata, Geometry, Textures; public List<string> Warnings = new List<string>(); }
-        sealed class OutputMesh { public byte[] Record, Vertices, Layout; public ushort[] Indices; public uint[] Palette; public string Name; public Bounds Bounds; public int Material; }
+        sealed class OutputMesh { public byte[] Record, Vertices, Layout; public ushort[] Indices; public uint[] Palette; public string Name; public Bounds Bounds; public int Material; public bool PreserveSkinning; }
         sealed class OutputMaterial { public byte[] Record, Colors, Parameters, States, Uv, UvExtra; public string Name; public uint Shader; public List<byte[]> Refs = new List<byte[]>(); public List<byte[]> Samplers = new List<byte[]>(); public List<uint> UvHashes = new List<uint>(); }
         static ushort U16(byte[] b, int o) => BitConverter.ToUInt16(b, o);
         static void Put(byte[] b, int o, ushort v) => Buffer.BlockCopy(BitConverter.GetBytes(v), 0, b, o, 2);
@@ -75,6 +75,16 @@ namespace G4Composition
                 CheckNative(source);
                 if (part.MeshIndex < 0 || part.MeshIndex >= source.Meshes.Count) throw new InvalidDataException(part.Name + ": mesh index out of range.");
                 var raw = source.Meshes[part.MeshIndex];
+                if (raw.PreserveSkinning)
+                {
+                    if (target.Skeleton == null) target.Skeleton = new SkeletonResolver(DumpDataManager.CommonPath).Resolve(target, token);
+                    foreach (uint hash in raw.Palette)
+                    {
+                        if (!target.Skeleton.ByHash.ContainsKey(hash))
+                            throw new InvalidDataException(part.Name + ": target body skeleton has no Avatar hair joint " + hash.ToString("X8"));
+                        if (!joints.Contains(hash)) joints.Add(hash);
+                    }
+                }
                 string materialKey = source.RelativePath + "|" + raw.Material;
                 if (!materialIds.TryGetValue(materialKey, out int materialId))
                 {
@@ -191,7 +201,13 @@ namespace G4Composition
                 int match = remaining.FindIndex(m => kind(m.Name) == kind(baseName));
                 if (match < 0) throw new InvalidDataException("找不到可對應原生 mesh：" + baseName);
                 var mesh = remaining[match]; remaining.RemoveAt(match);
-                int layout = nativeBase.Layouts.FindIndex(l => l.SequenceEqual(mesh.Layout));
+                // A layout's second word binds its shader, not just vertex formats.
+                // Source-local shader indices can otherwise match an unrelated Other
+                // shader and leave facial material animation disconnected.
+                int materialRecord = nativeBase.Section(0x64) + nativeBase.Meshes[i].Material * 16;
+                int shader = nativeBase.Reader.U8(materialRecord + 9);
+                int layout = nativeBase.Layouts.FindIndex(l =>
+                    BitConverter.ToInt32(l, 4) == shader && l.SequenceEqual(mesh.Layout));
                 if (layout < 0)
                 {
                     layout = nativeBase.Meshes[i].Layout;
@@ -200,8 +216,11 @@ namespace G4Composition
                 mesh.Layout = nativeBase.Layouts[layout];
                 mesh.Record = (byte[])nativeBase.Meshes[i].Record.Clone();
                 mesh.Record[0x42] = checked((byte)layout); mesh.Record[0x43] = checked((byte)nativeBase.Meshes[i].Material);
-                RemapLocalPalette(mesh, nativeBase.Meshes[i].Palette, headJoint);
-                mesh.Palette = (uint[])nativeBase.Meshes[i].Palette.Clone();
+                if (!mesh.PreserveSkinning)
+                {
+                    RemapLocalPalette(mesh, nativeBase.Meshes[i].Palette, headJoint);
+                    mesh.Palette = (uint[])nativeBase.Meshes[i].Palette.Clone();
+                }
                 uint sourceNode = nativeBase.Reader.U32(nativeBase.Section(0x74) + BitConverter.ToUInt16(mesh.Record, 0x38) * 4);
                 Put(mesh.Record, 0x38, checked((ushort)Math.Max(0, targetJoints.IndexOf(targetJoints.Contains(sourceNode) ? sourceNode : headJoint))));
                 meshes.Add(mesh);
@@ -226,8 +245,29 @@ namespace G4Composition
             int jointTable = nativeBase.Section(0x74);
             int writableJoints = Math.Min(targetJoints.Count, nativeBase.Reader.U16(0x24));
             for (int i = 0; i < writableJoints; i++) Put(metadata, jointTable + i * 4, unchecked((int)targetJoints[i]));
-            // Each mesh now uses the matching native hair palette. Preserve the
-            // original shared palette table and its overlapping ranges verbatim.
+            if (meshes.Any(m => m.PreserveSkinning))
+            {
+                // Keep native physical section order. Appending palettes after the
+                // name tables is not accepted by readers which bound these sections
+                // using the following table's offset.
+                if (targetJoints.Count != nativeBase.Reader.U16(0x24))
+                    metadata = ReplaceNativeSection(metadata, 0x74, Pack(targetJoints));
+                var palette = new List<int>();
+                foreach (var mesh in meshes)
+                {
+                    if (mesh.Palette.Length > 255) throw new InvalidDataException("Avatar joint palette capacity exceeded.");
+                    Put(mesh.Record, 0x3a, checked((ushort)palette.Count));
+                    Put(mesh.Record, 0x3c, checked((ushort)(0x100 | mesh.Palette.Length)));
+                    foreach (uint hash in mesh.Palette)
+                    {
+                        int index = targetJoints.IndexOf(hash);
+                        if (index < 0) throw new InvalidDataException("Missing output skin joint.");
+                        palette.Add(index);
+                    }
+                }
+                metadata = ReplaceNativeSection(metadata, 0x82, Shorts(palette));
+                Put(metadata, 0x24, checked((ushort)targetJoints.Count));
+            }
             for (int i = 0; i < meshes.Count; i++)
                 Buffer.BlockCopy(meshes[i].Record, 0, metadata, nativeBase.Reader.U16(4) + i * 0x50, 0x50);
             Put(metadata, 0x50, vertexSize); Put(metadata, 0x54, indexSize); Put(metadata, 0x5c, indexBase);
@@ -236,6 +276,37 @@ namespace G4Composition
             if (parsed.Parts.Count != meshes.Count) throw new InvalidDataException("Conservative G4MD readback mismatch.");
             return new Result { Metadata = metadata, Geometry = geometry, Textures = mergedTextures };
         }
+        static byte[] ReplaceNativeSection(byte[] metadata, int field, byte[] replacement)
+        {
+            int bias = U16(metadata, 10) * 4;
+            int start = bias + U16(metadata, field) * 4;
+            int end = metadata.Length;
+            for (int f = 0x62; f <= 0x8a; f += 2)
+            {
+                if (U16(metadata, f) == 0) continue;
+                int offset = bias + U16(metadata, f) * 4;
+                if (offset > start) end = Math.Min(end, offset);
+            }
+            if (start < bias || end <= start) throw new InvalidDataException("Invalid native skin section range.");
+            int oldSize = end - start;
+            // Retain alignment of every following section, including 16-byte tables.
+            int newSize = Math.Max(oldSize, replacement.Length);
+            newSize += (16 - (newSize - oldSize) % 16) % 16;
+            int delta = newSize - oldSize;
+            byte[] output = new byte[checked(metadata.Length + delta)];
+            Buffer.BlockCopy(metadata, 0, output, 0, start);
+            Buffer.BlockCopy(replacement, 0, output, start, replacement.Length);
+            Buffer.BlockCopy(metadata, end, output, end + delta, metadata.Length - end);
+            for (int f = 0x62; f <= 0x8a; f += 2)
+            {
+                if (U16(metadata, f) == 0) continue;
+                int offset = bias + U16(metadata, f) * 4;
+                if (offset >= end) Put(output, f, checked((ushort)((offset + delta - bias) / 4)));
+            }
+            Put(output, 12, output.Length - bias);
+            return output;
+        }
+
         static byte[] MergeFaceTextures(RawHeadAsset hair, RawHeadAsset head)
         {
             if (hair.TextureContainer == null) throw new InvalidDataException(hair.RelativePath + ": 找不到頭髮 G4TX。");
@@ -534,7 +605,7 @@ namespace G4Composition
                 }
             }
             byte[] record = (byte[])raw.Record.Clone(); Put(record, 0x3e, (ushort)((U16(record, 0x3e) & 0xff00) | raw.Stride));
-            return new OutputMesh { Record = record, Layout = layout, Vertices = output, Indices = indices.ToArray(), Palette = palette, Bounds = bounds };
+            return new OutputMesh { Record = record, Layout = layout, Vertices = output, Indices = indices.ToArray(), Palette = palette, Bounds = bounds, PreserveSkinning = raw.PreserveSkinning };
         }
         static void PutBounds(byte[] bytes, int offset, Bounds bounds)
         {

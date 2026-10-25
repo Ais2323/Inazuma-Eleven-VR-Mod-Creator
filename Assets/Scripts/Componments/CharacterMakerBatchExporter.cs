@@ -29,23 +29,33 @@ public sealed class CharacterMakerBatchExporter
     public BuiltCharacter Build(CharacterMakerDocument saved)
     {
         ValidateDocument(saved);
+        // Migration and source resolution must not modify the caller's save.
+        saved = JsonUtility.FromJson<CharacterMakerDocument>(JsonUtility.ToJson(saved));
         string targetPath = FindFaceModel(saved.targetId);
         RawHeadAsset target = Read(targetPath);
-        RawHeadAsset head = Read(FindFaceModel(saved.head.sourceId));
-        RawHeadAsset hair = Read(FindFaceModel(saved.hair.sourceId));
-        RawHeadAsset other = string.IsNullOrWhiteSpace(saved.other.sourceId)
-            ? null : Read(FindFaceModel(saved.other.sourceId));
-
-        ResolvePart(saved, saved.head, head, 1, target);
-        ResolvePart(saved, saved.hair, hair, 2, target);
-        if (other != null) ResolvePart(saved, saved.other, other, 3, target);
-
-        var sources = new Dictionary<string, RawHeadAsset>(StringComparer.OrdinalIgnoreCase)
+        var avatars = new Dictionary<string, RawHeadAsset>(StringComparer.Ordinal);
+        RawHeadAsset ResolveSource(CharacterMakerPart part)
         {
-            [target.RelativePath] = target,
-            [head.RelativePath] = head,
-            [hair.RelativePath] = hair
-        };
+            if (string.IsNullOrWhiteSpace(part.avatarCode)) return Read(FindFaceModel(part.sourceId));
+            var recipe = AvatarRecipeParser.Parse(part.avatarCode);
+            if (part.sourceId != AvatarCompositionAsset.SourceId(recipe.Code)) throw new InvalidDataException("Avatar 編號與來源 ID 不符。");
+            if (!avatars.TryGetValue(recipe.Code, out RawHeadAsset asset))
+                avatars.Add(recipe.Code, asset = AvatarCompositionAsset.Build(recipe.Code));
+            return asset;
+        }
+        RawHeadAsset head = ResolveSource(saved.head);
+        RawHeadAsset hair = ResolveSource(saved.hair);
+        RawHeadAsset other = string.IsNullOrWhiteSpace(saved.other.sourceId) ? null : ResolveSource(saved.other);
+
+        Vector3 targetAnchor = ResolveTargetHeadAnchor(saved, target);
+        ResolvePart(saved, saved.head, head, 1, targetAnchor);
+        ResolvePart(saved, saved.hair, hair, 2, targetAnchor);
+        if (other != null) ResolvePart(saved, saved.other, other, 3, targetAnchor);
+        saved.uniformHem = saved.Hem;
+        saved.version = 11;
+
+        var sources = new Dictionary<string, RawHeadAsset>(StringComparer.OrdinalIgnoreCase);
+        foreach (var source in new[] { target, head, hair }) sources[source.RelativePath] = source;
         if (other != null) sources[other.RelativePath] = other;
 
         var composition = new CompositionDocument();
@@ -103,9 +113,12 @@ public sealed class CharacterMakerBatchExporter
         string modelPath = FindVersionedTable(directory, "chara_model_");
         CfgTable bases = CfgTable.Read(File.ReadAllBytes(basePath), basePath);
         CfgTable models = CfgTable.Read(File.ReadAllBytes(modelPath), modelPath);
+        var identityWriter = new CharacterIdentityWriter(bases);
         bool changed = false;
-        foreach (CharacterMakerDocument document in saved)
+        foreach (CharacterMakerDocument source in saved)
         {
+            var document = JsonUtility.FromJson<CharacterMakerDocument>(JsonUtility.ToJson(source));
+            document.UpgradeBodySettings(models);
             CfgTable.Row character = bases.Rows.SingleOrDefault(row => row.Name == "CHARA_BASE_INFO" &&
                 row.Values.Length > 6 && string.Equals(row.Text(1), document.targetId, StringComparison.OrdinalIgnoreCase));
             if (character == null) throw new InvalidDataException(document.targetId + " 找不到 CHARA_BASE_INFO。");
@@ -116,22 +129,27 @@ public sealed class CharacterMakerBatchExporter
             uint originalBodyId = model.UInt(4);
             CfgTable.Row originalBody = models.Rows.FirstOrDefault(row => IsBodyRow(row) && row.UInt(0) == originalBodyId);
             if (originalBody == null) throw new InvalidDataException(document.targetId + " 找不到原始 CHARA_BODY_INFO。");
-            CfgTable.Row replacement = originalBody.Int(5) == document.bodyType - 1
-                ? originalBody
-                : models.Rows.FirstOrDefault(row => IsBodyRow(row) && row.Int(5) == document.bodyType - 1);
+            document.NormalizeBodyGender(models, document.identity?.gender ?? (int)character.Int(11), originalBody);
+            CfgTable.Row replacement = NativeBodyTypes.Resolve(models, document.bodyType, document.bodyVariantId,
+                originalBody.Int(5) >= 4, originalBody);
             if (replacement == null) throw new InvalidDataException(document.targetId + " 無法對應 Body Type " + document.bodyType + "。");
+            int hem = document.Hem;
             uint skin = EncodeColor(document.skinColor);
-            bool rowChanged = model.UInt(4) != replacement.UInt(0) || model.Int(31) != document.chestSize ||
-                model.Int(12) != document.uniformCollar || model.Int(13) != document.equipmentFlag2 || model.UInt(16) != skin;
+            bool rowChanged = model.UInt(4) != replacement.UInt(0) || model.Int(31) != NativeBodyShape.ToNativeChestSize(document.chestSize) ||
+                model.Int(12) != document.uniformCollar || model.Int(13) != (hem == 1 ? 1 : 0) || model.UInt(16) != skin;
+            rowChanged |= identityWriter.Apply(document.identity, document.targetId, character, model);
+            rowChanged |= identityWriter.ApplyFacial(document, model);
+            identityWriter.ApplyVoice(document);
             if (!rowChanged) continue;
             SetInteger(model, 4, replacement.UInt(0));
-            SetInteger(model, 31, document.chestSize);
+            SetInteger(model, 31, NativeBodyShape.ToNativeChestSize(document.chestSize));
             SetInteger(model, 12, document.uniformCollar);
-            SetInteger(model, 13, document.equipmentFlag2);
+            SetInteger(model, 13, hem == 1 ? 1 : 0);
             SetInteger(model, 16, unchecked((int)skin));
             changed = true;
         }
-        if (!changed) return false;
+        bool identityChanged = identityWriter.Write(outputRoot);
+        if (!changed) return identityChanged;
         byte[] bytes = models.Write();
         CfgTable.Read(bytes, "merged character settings validation");
         string relative = modelPath.Substring(DumpDataManager.CommonPath.Length + 1);
@@ -143,12 +161,13 @@ public sealed class CharacterMakerBatchExporter
 
     private static void ValidateDocument(CharacterMakerDocument saved)
     {
-        if (saved == null || saved.version < 1 || saved.version > 2) throw new InvalidDataException("不支援的存檔版本。");
+        if (saved == null || saved.version < 1 || saved.version > 11) throw new InvalidDataException("不支援的存檔版本。");
+        if (saved.uniformSleeve < 0 || saved.uniformSleeve > 1 || saved.Hem < 0 || saved.Hem > 2) throw new InvalidDataException("無效的袖子或下擺設定。");
         if (!SafeId(saved.targetId) || !SafeId(saved.head?.sourceId) || !SafeId(saved.hair?.sourceId))
             throw new InvalidDataException("目標、Head 或 Hair 的角色 ID 無效。");
         if (saved.other != null && !string.IsNullOrWhiteSpace(saved.other.sourceId) && !SafeId(saved.other.sourceId))
             throw new InvalidDataException("Other 的角色 ID 無效。");
-        if (saved.bodyType < 1 || saved.bodyType > 6 || saved.chestSize < 0 || saved.chestSize > 2)
+        if (saved.bodyType < 1 || saved.bodyType > 8 || saved.chestSize < -1 || saved.chestSize > 2)
             throw new InvalidDataException("身體設定超出範圍。");
     }
 
@@ -166,7 +185,7 @@ public sealed class CharacterMakerBatchExporter
         throw new FileNotFoundException("找不到角色模型：" + id);
     }
 
-    private static void ResolvePart(CharacterMakerDocument document, CharacterMakerPart part, RawHeadAsset source, int option, RawHeadAsset target)
+    private static void ResolvePart(CharacterMakerDocument document, CharacterMakerPart part, RawHeadAsset source, int option, Vector3 targetAnchor)
     {
         if (part == null) throw new InvalidDataException("缺少模型部位設定。");
         if (part.meshNames == null || part.meshNames.Count == 0)
@@ -177,25 +196,33 @@ public sealed class CharacterMakerBatchExporter
             part.meshNames = selected.Select(value => value.Name).ToList();
         }
         if (part.meshNames.Count == 0) throw new InvalidDataException(source.RelativePath + " 找不到指定部位。");
-        if (document.version < 2)
-        {
-            Vector3 targetAnchor = FaceAnchor(target);
-            Vector3 sourceAnchor = FaceAnchor(source);
-            part.exportPosition = targetAnchor + part.position + Quaternion.Euler(part.rotation) *
-                Vector3.Scale(-sourceAnchor, part.scale);
-        }
+        // exportPosition is a cache, not an independent user adjustment. Derive
+        // it from the selected body's head bone after every load/export, so old
+        // saves cannot restore a stale body-height baseline.
+        Vector3 sourceAnchor = HeadAttachmentAnchor.Get(source);
+        part.exportPosition = targetAnchor + part.position
+            - Quaternion.Euler(part.rotation) * Vector3.Scale(sourceAnchor, part.scale);
         ValidateVector(part.exportPosition, false, "Position");
         ValidateVector(part.rotation, false, "Rotation");
         ValidateVector(part.scale, true, "Scale");
     }
 
-    private static Vector3 FaceAnchor(RawHeadAsset asset)
+    private static Vector3 ResolveTargetHeadAnchor(CharacterMakerDocument saved, RawHeadAsset target)
     {
-        Vector3[] points = asset.Preview.Parts.Where(value => IsFace(value.Name)).SelectMany(value => value.Positions).ToArray();
-        if (points.Length == 0) throw new InvalidDataException(asset.RelativePath + " 沒有臉部 anchor。");
-        Vector3 min = points[0], max = points[0];
-        foreach (Vector3 point in points) { min = Vector3.Min(min, point); max = Vector3.Max(max, point); }
-        return (min + max) * .5f;
+        Vector3 anchor = HeadAttachmentAnchor.Get(target);
+        string directory = Path.Combine(DumpDataManager.CommonPath, "gamedata", "character");
+        string basesPath = FindVersionedTable(directory, "chara_base_");
+        string modelsPath = FindVersionedTable(directory, "chara_model_");
+        var bases = CfgTable.Read(File.ReadAllBytes(basesPath), basesPath);
+        var models = CfgTable.Read(File.ReadAllBytes(modelsPath), modelsPath);
+        var character = bases.Rows.Single(row => row.Name == "CHARA_BASE_INFO" &&
+            row.Values.Length > 6 && string.Equals(row.Text(1), saved.targetId, StringComparison.OrdinalIgnoreCase));
+        var model = models.Rows.Single(row => row.Name == "CHARA_MODEL_INFO" && row.UInt(0) == character.UInt(6));
+        var original = models.Rows.First(row => IsBodyRow(row) && row.UInt(0) == model.UInt(4));
+        saved.UpgradeBodySettings(models);
+        saved.NormalizeBodyGender(models, saved.identity?.gender ?? (int)character.Int(11), original);
+        var selected = NativeBodyTypes.Resolve(models, saved.bodyType, saved.bodyVariantId, original.Int(5) >= 4, original);
+        return anchor + HeadAttachmentAnchor.GetBody(selected) - HeadAttachmentAnchor.GetBody(original);
     }
 
     private static void AddParts(CompositionDocument output, RawHeadAsset source, CharacterMakerPart saved)
@@ -234,9 +261,21 @@ public sealed class CharacterMakerBatchExporter
                 byte[] dds = sourceTexture.Dds;
                 CharacterMakerTexture imported = saved.textures.FirstOrDefault(value => value.option == option &&
                     string.Equals(value.sourceId, savedPart.sourceId, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(value.role, role, StringComparison.OrdinalIgnoreCase));
-                if (imported != null) dds = Convert.FromBase64String(imported.ddsBase64 ?? "");
-                output = ReplaceTexture(output, channel, dds, sourceTexture.Descriptor, destinationHashes);
+                    (string.IsNullOrWhiteSpace(savedPart.avatarCode) ? string.Equals(value.role, role, StringComparison.OrdinalIgnoreCase) : Channel(value.role) == channel));
+                if (imported != null)
+                {
+                    dds = Convert.FromBase64String(imported.ddsBase64 ?? "");
+                    if (option == 2 && !string.IsNullOrWhiteSpace(savedPart.avatarCode) && imported.avatarAtlasVersion < 1)
+                    {
+                        dds = CharacterManager.RepackLegacyAvatarHairDds(dds, entry.Value.LegacyHairAtlasBounds, channel != "base");
+                        imported.ddsBase64 = Convert.ToBase64String(dds); imported.avatarAtlasVersion = 1;
+                    }
+                }
+                try { output = ReplaceTexture(output, channel, dds, sourceTexture, destinationHashes); }
+                catch (InvalidDataException exception)
+                {
+                    throw new InvalidDataException("部位 " + option + "（" + savedPart.sourceId + " / " + sourceTexture.Name + "）：" + exception.Message, exception);
+                }
             }
         }
         return output;
@@ -250,21 +289,28 @@ public sealed class CharacterMakerBatchExporter
         return index < nonFace.Length ? new[] { nonFace[index] } : Array.Empty<G4ModelParser.Part>();
     }
 
-    private static byte[] ReplaceTexture(byte[] container, string channel, byte[] dds, byte[] descriptor, HashSet<uint> hashes)
+    private static byte[] ReplaceTexture(byte[] container, string channel, byte[] dds, RawTexture source, HashSet<uint> hashes)
     {
         List<RawTexture> textures = RawTexture.Read(container, "batch G4TX");
         RawTexture[] matches = textures.Where(value => hashes.Contains(value.Hash) && Channel(Role(value.Name)) == channel).ToArray();
         if (matches.Length != 1) throw new InvalidDataException("輸出 G4TX 找到 " + matches.Length + " 張 " + channel + " 貼圖。");
-        G4TextureParser.TextureData expected = G4TextureParser.ParseDDS(matches[0].Dds, matches[0].Name);
+        // The conservative model template can come from a different character
+        // (e.g. to supply an Other mesh). Its slot size is not the selected part's
+        // texture contract. Replace both DDS and descriptor using the source.
+        G4TextureParser.TextureData expected = G4TextureParser.ParseDDS(source.Dds, source.Name);
         G4TextureParser.TextureData imported = G4TextureParser.ParseDDS(dds, "batch imported " + channel);
         if (expected.Width != imported.Width || expected.Height != imported.Height || expected.MipCount != imported.MipCount)
-            throw new InvalidDataException(channel + " DDS dimensions or mip count do not match the source texture.");
+            throw new InvalidDataException(channel + " DDS " + imported.Width + "x" + imported.Height + " / " + imported.MipCount +
+                " mips does not match selected source " + source.Name + " " + expected.Width + "x" + expected.Height + " / " + expected.MipCount + " mips.");
+        if (source.Descriptor == null || source.Descriptor.Length != 48 ||
+            BitConverter.ToUInt16(source.Descriptor, 24) != imported.Width || BitConverter.ToUInt16(source.Descriptor, 26) != imported.Height)
+            throw new InvalidDataException(channel + " DDS dimensions do not match its source G4TX descriptor.");
         matches[0].Dds = dds;
-        matches[0].Descriptor = (byte[])descriptor.Clone();
+        matches[0].Descriptor = (byte[])source.Descriptor.Clone();
         return WriteG4TxPreservingTable(container, textures);
     }
 
-    private static byte[] WriteG4TxPreservingTable(byte[] template, IReadOnlyList<RawTexture> textures)
+    internal static byte[] WriteG4TxPreservingTable(byte[] template, IReadOnlyList<RawTexture> textures)
     {
         if (template == null || template.Length < 0x60)
             throw new InvalidDataException("G4TX template is too small.");

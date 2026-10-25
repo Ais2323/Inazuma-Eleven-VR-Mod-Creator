@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -16,6 +16,7 @@ namespace G4Composition
         public readonly List<RawMesh> Meshes = new List<RawMesh>();
         public readonly List<byte[]> Layouts = new List<byte[]>();
         public readonly List<RawTexture> Textures = new List<RawTexture>();
+        public UnityEngine.Rect LegacyHairAtlasBounds = new UnityEngine.Rect(0, 0, 1, 1);
         public G4Skeleton Skeleton;
         public string SkeletonError;
         internal G4ModelParser.Binary Reader => new G4ModelParser.Binary(Metadata, ModelPath);
@@ -82,6 +83,7 @@ namespace G4Composition
     public sealed class RawMesh
     {
         public int Index, Stride, VertexCount, Layout, Material;
+        public bool PreserveSkinning;
         public byte[] Record, Vertices;
         public ushort[] Indices;
         public uint[] Palette;

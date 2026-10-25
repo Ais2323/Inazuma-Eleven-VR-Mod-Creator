@@ -15,7 +15,9 @@ public static class G4ModelLoader
         bool applyNodeBindPose = false,
         IReadOnlyDictionary<uint, AvatarBoneTransform> boneTransforms = null,
         string skeletonModelHint = null,
-        bool loadTextures = true)
+        bool loadTextures = true,
+        G4Skeleton skeletonOverride = null,
+        bool headLocalSkinning = true)
     {
         // ??頝臬?
         var modelRoot = Path.Combine(DumpDataManager.CommonPath, modelPath);
@@ -27,7 +29,7 @@ public static class G4ModelLoader
 
         // 閫??璅∪?
         var model = G4ModelParser.Parse(meta, geometry, modelRoot);
-        G4Skeleton skeleton = applyNodeBindPose ? LoadEditSkeleton(modelRoot, skeletonModelHint ?? modelName) : null;
+        G4Skeleton skeleton = skeletonOverride ?? (applyNodeBindPose ? LoadEditSkeleton(modelRoot, skeletonModelHint ?? modelName) : null);
         Matrix4x4[] deformedBind = skeleton == null ? null : BuildDeformedBind(skeleton, boneTransforms);
         var warnings = new List<string>();
         if (textureName == null) textureName = modelName;
@@ -40,6 +42,8 @@ public static class G4ModelLoader
 
         var modelObject = new GameObject(modelName);
         var resources = modelObject.AddComponent<RuntimeHeadResources>();
+        if (!applyNodeBindPose && modelPath.Replace((char)92, '/').StartsWith("chr/_face/", System.StringComparison.OrdinalIgnoreCase))
+            modelObject.AddComponent<HeadAttachmentAnchor>().SourceModelPath = Path.Combine(modelRoot, modelName + ".g4md");
         var shader = Resources.Load<Shader>("G4HeadPreview");
         var materials = new Material[model.Materials.Count];
         Vector3[] faceDeformed = null;
@@ -79,7 +83,7 @@ public static class G4ModelLoader
             mesh.RecalculateBounds();
 
             if (skeleton != null && part.BonePalette != null)
-                ApplyDirectDeformation(mesh, part, skeleton, deformedBind);
+                ApplyDirectDeformation(mesh, part, skeleton, deformedBind, headLocalSkinning);
 
             if (part.Name.StartsWith("base_", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -122,6 +126,8 @@ public static class G4ModelLoader
             partObject.transform.SetParent(modelObject.transform, false);
             partObject.GetComponent<MeshFilter>().sharedMesh = mesh;
             partObject.GetComponent<MeshRenderer>().sharedMaterial = materials[part.Material];
+            if (skeleton != null && modelName.StartsWith("hair", System.StringComparison.OrdinalIgnoreCase))
+                partObject.AddComponent<AvatarMeshSkin>().Capture(part, skeleton);
         }
 
         return modelObject;
@@ -131,7 +137,7 @@ public static class G4ModelLoader
         Mesh mesh,
         G4ModelParser.Part part,
         G4Skeleton skeleton,
-        Matrix4x4[] deformedBind)
+        Matrix4x4[] deformedBind, bool headLocalSkinning)
     {
         Matrix4x4 reflection = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
         Matrix4x4 bindShape = Matrix4x4.identity;
@@ -139,7 +145,7 @@ public static class G4ModelLoader
         // G4SK bind matrices are in the full character space. Convert into
         // that space before skinning and back into mesh-local space after it.
         uint headHash = G4TextureParser.Crc32("c_head_1_0");
-        if (skeleton.ByHash.TryGetValue(headHash, out int headBone))
+        if (headLocalSkinning && skeleton.ByHash.TryGetValue(headHash, out int headBone))
             bindShape = reflection * skeleton.Bind[headBone] * reflection;
         Matrix4x4 inverseBindShape = bindShape.inverse;
         bool rigidEar = part.BonePalette.Length == 1 &&
@@ -210,7 +216,7 @@ public static class G4ModelLoader
         mesh.vertices = positions;
         mesh.RecalculateBounds();
     }
-    static Vector3 ClosestPointOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c, out Vector3 barycentric)
+    internal static Vector3 ClosestPointOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c, out Vector3 barycentric)
     {
         Vector3 ab = b - a, ac = c - a, ap = p - a;
         float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);

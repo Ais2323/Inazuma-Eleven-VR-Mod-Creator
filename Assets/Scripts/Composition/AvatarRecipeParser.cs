@@ -69,7 +69,7 @@ namespace G4Composition
         // Eye height translation is in model units, rather than texture units.
         public float ModelHeight;
     }
-    public static class AvatarRecipeParser
+    public static partial class AvatarRecipeParser
     {
         const string TablePrefix = "chara_edit_";
         const string CodeList = "m_CharaEditCodeInfoList";
@@ -552,7 +552,7 @@ namespace G4Composition
             public int Type, BitCount, Category, CategoryParam, CategoryParamSub;
         }
 
-        sealed class Rdbnp
+        internal sealed class Rdbnp
         {
             readonly byte[] data;
             readonly G4ModelParser.Binary binary;
