@@ -6,7 +6,7 @@ using System.Linq;
 namespace G4Composition
 {
     // Native tables shared by the detail editor and batch exporter, cached per dump root.
-    internal sealed class CharacterIdentityCatalog
+    internal sealed partial class CharacterIdentityCatalog
     {
         internal sealed class Team
         {
@@ -106,6 +106,8 @@ namespace G4Composition
                     shortName = shortName, originalShortName = shortName, shirtName = shirt, originalShirtName = shirt,
                     description = description, originalDescription = description, japaneseName = locale == "ja" ? full : null });
             }
+            result.techniques = LoadTechniques(id);
+            result.techniqueParameterId = result.techniques.FirstOrDefault()?.parameterId ?? 0;
             return result;
         }
 

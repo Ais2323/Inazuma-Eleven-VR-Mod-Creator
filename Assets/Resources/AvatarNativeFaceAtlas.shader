@@ -11,7 +11,7 @@ Shader "Hidden/G4/AvatarNativeFaceAtlas"
  fixed4 frag(v2f_img i):SV_Target {
   fixed4 feature = tex2D(_FeatureTex, i.uv);
   fixed4 expression = tex2D(_MainTex, i.uv);
-  fixed3 rgb = expression.a >= .3 ? expression.rgb : feature.rgb;
+  fixed3 rgb = lerp(feature.rgb, expression.rgb, expression.a);
   // A small plain edge is shared by shell and ear UVs, as in native faces.
   if(i.uv.x < 4.0/2048.0) rgb = _SkinColor.rgb;
   return fixed4(rgb,1);

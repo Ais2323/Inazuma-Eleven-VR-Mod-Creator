@@ -62,5 +62,13 @@
     "CharSubPosition": "Sub Position",
     "NoTeam": "No affiliation",
     "SelectIconFront": "Select front icon (cancel to keep current icon)",
-    "SelectIconBack": "Select back icon (cancel for a blank back)"
+    "SelectIconBack": "Select back icon (cancel for a blank back)",
+    "Skills": "Skills",
+    "SkillNone": "None",
+    "TechniqueVariant": "Technique variant",
+    "TechniqueRarity": "Rarity",
+    "SkillsMain": "Main",
+    "SkillsAlternate": "Alternate",
+    "CharSkillMain": "Main",
+    "CharSkillSub": "Sub"
 }

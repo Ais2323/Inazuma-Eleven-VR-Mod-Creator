@@ -21,7 +21,7 @@ public partial class CharacterInfoController : MonoBehaviour
     {
         if (initialized) return;
         initialized = true;
-        InitializeDetails(dumpReady);
+        InitializeDetails(dumpReady); InitializeSkills(dumpReady);
         BindBodyTypeButtons(); BindUniformCollarButtons(); BindEquipmentButtons(); BindChestSizeButtons();
         RefreshBodySettingButtons(); ExcludeBodyLayerFromIconCamera();
         if (dumpReady) LoadDefaultBodyPreviews();
@@ -750,7 +750,7 @@ public partial class CharacterInfoController : MonoBehaviour
                 Identity.gender = body.Int(5) >= 4 ? 2 : 1;
                 RefreshIdentityFields();
             }
-            var document = new CharacterMakerDocument { version = 11, targetId = nowCharacterData.id,
+            var document = new CharacterMakerDocument { version = 14, targetId = nowCharacterData.id,
                 bodyType = settings.BodyType, bodyVariantId = settings.VariantId,
                 bodyAvatarCode = settings.Code, chestSize = settings.ChestSize,
                 uniformCollar = settings.Collar, uniformSleeve = settings.Sleeve, uniformHem = settings.Hem,

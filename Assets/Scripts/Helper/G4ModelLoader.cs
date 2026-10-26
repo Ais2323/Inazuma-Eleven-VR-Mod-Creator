@@ -17,7 +17,8 @@ public static class G4ModelLoader
         string skeletonModelHint = null,
         bool loadTextures = true,
         G4Skeleton skeletonOverride = null,
-        bool headLocalSkinning = true)
+        bool headLocalSkinning = true,
+        AvatarBoneTransform rigidAttachment = null)
     {
         // ??頝臬?
         var modelRoot = Path.Combine(DumpDataManager.CommonPath, modelPath);
@@ -83,7 +84,7 @@ public static class G4ModelLoader
             mesh.RecalculateBounds();
 
             if (skeleton != null && part.BonePalette != null)
-                ApplyDirectDeformation(mesh, part, skeleton, deformedBind, headLocalSkinning);
+                ApplyDirectDeformation(mesh, part, skeleton, deformedBind, headLocalSkinning, rigidAttachment);
 
             if (part.Name.StartsWith("base_", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -137,7 +138,7 @@ public static class G4ModelLoader
         Mesh mesh,
         G4ModelParser.Part part,
         G4Skeleton skeleton,
-        Matrix4x4[] deformedBind, bool headLocalSkinning)
+        Matrix4x4[] deformedBind, bool headLocalSkinning, AvatarBoneTransform rigidAttachment)
     {
         Matrix4x4 reflection = Matrix4x4.Scale(new Vector3(1f, 1f, -1f));
         Matrix4x4 bindShape = Matrix4x4.identity;
@@ -150,6 +151,8 @@ public static class G4ModelLoader
         Matrix4x4 inverseBindShape = bindShape.inverse;
         bool rigidEar = part.BonePalette.Length == 1 &&
             part.Name.StartsWith("ear", System.StringComparison.OrdinalIgnoreCase);
+        Matrix4x4 attachment = rigidAttachment == null ? Matrix4x4.identity : Matrix4x4.TRS(
+            rigidAttachment.Position, Quaternion.Euler(rigidAttachment.Rotation * Mathf.Rad2Deg), rigidAttachment.Scale);
         var skin = new Matrix4x4[part.BonePalette.Length];
         for (int i = 0; i < skin.Length; i++)
         {
@@ -161,7 +164,7 @@ public static class G4ModelLoader
             // space. Their bind transform is placement, not something to
             // cancel as with the face's model-space skinning.
             skin[i] = rigidEar
-                ? inverseBindShape * changed
+                ? inverseBindShape * changed * attachment
                 : inverseBindShape * changed * inverseBind * bindShape;
         }
         Vector3[] positions = mesh.vertices;

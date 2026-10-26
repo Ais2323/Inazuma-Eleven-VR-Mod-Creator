@@ -130,6 +130,7 @@ public partial class CharacterInfoController
     }
     internal void RefreshIdentityFields()
     {
+        RefreshSkills();
         var value = Identity?.locales?.Find(x => x.locale == detailLocale);
         SetInput(fullNameInput, value?.fullName); SetInput(shortNameInput, value?.shortName);
         SetInput(shirtNameInput, value?.shirtName);

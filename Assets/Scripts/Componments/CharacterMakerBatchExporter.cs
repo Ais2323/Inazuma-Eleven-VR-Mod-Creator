@@ -52,7 +52,7 @@ public sealed class CharacterMakerBatchExporter
         ResolvePart(saved, saved.hair, hair, 2, targetAnchor);
         if (other != null) ResolvePart(saved, saved.other, other, 3, targetAnchor);
         saved.uniformHem = saved.Hem;
-        saved.version = 11;
+        saved.version = 14;
 
         var sources = new Dictionary<string, RawHeadAsset>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in new[] { target, head, hair }) sources[source.RelativePath] = source;
@@ -161,7 +161,7 @@ public sealed class CharacterMakerBatchExporter
 
     private static void ValidateDocument(CharacterMakerDocument saved)
     {
-        if (saved == null || saved.version < 1 || saved.version > 11) throw new InvalidDataException("不支援的存檔版本。");
+        if (saved == null || saved.version < 1 || saved.version > 14) throw new InvalidDataException("不支援的存檔版本。");
         if (saved.uniformSleeve < 0 || saved.uniformSleeve > 1 || saved.Hem < 0 || saved.Hem > 2) throw new InvalidDataException("無效的袖子或下擺設定。");
         if (!SafeId(saved.targetId) || !SafeId(saved.head?.sourceId) || !SafeId(saved.hair?.sourceId))
             throw new InvalidDataException("目標、Head 或 Hair 的角色 ID 無效。");

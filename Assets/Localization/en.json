@@ -63,5 +63,19 @@
     "CharSubPosition": "Sub Position",
     "NoTeam": "No affiliation",
     "SelectIconFront": "Select front icon (cancel to keep current icon)",
-    "SelectIconBack": "Select back icon (cancel for a blank back)"
+    "SelectIconBack": "Select back icon (cancel for a blank back)",
+    "Skills": "Skills",
+    "SkillNone": "None",
+    "TechniqueVariant": "Technique variant",
+    "TechniqueRarity": "Rarity",
+    "CharSkillMain": "Main",
+    "CharSkillSub": "Sub",
+    "Status": "Status",
+    "StatusKick": "Kick",
+    "StatusControl": "Control",
+    "StatusTechnique": "Technique",
+    "StatusPressure": "Pressure",
+    "StatusPhysical": "Physical",
+    "StatusAgility": "Agility",
+    "StatusIntelligence": "Intelligence"
 }

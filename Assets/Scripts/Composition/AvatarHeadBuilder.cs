@@ -41,7 +41,7 @@ namespace G4Composition
                 ApplyHeadAttachment(hairBack, attachment);
                 ApplyHeadAttachment(hairFront, attachment);
                 ApplyHeadAttachment(hairUpper, attachment);
-                GameObject ear = Add(root, "_ear", parts.Ear, "_facebase", "_facebase", true, earBones, parts.HeadModel);
+                GameObject ear = Add(root, "_ear", parts.Ear, "_facebase", "_facebase", true, earBones, parts.HeadModel, rigidAttachment: AvatarRecipeParser.ResolveHeadAttachment(data, 14));
                 GameObject accessory = Add(root, "_accessory", parts.Accessory, "accessory_10", "_accessorytex", true);
 
                 Texture2D facialParts = ComposeFacialParts(baseHead, data, parts, previewExpression, previewMouthExpression);
@@ -521,14 +521,14 @@ namespace G4Composition
             model.transform.localRotation = Quaternion.Euler(attachment.Rotation * Mathf.Rad2Deg);
             model.transform.localScale = attachment.Scale;
         }
-        private static GameObject Add(Transform parent, string folder, string model, string texture, string textureFolder, bool fallbackTexture = false, System.Collections.Generic.IReadOnlyDictionary<uint, AvatarBoneTransform> boneTransforms = null, string skeletonModelHint = null, bool loadTextures = true)
+        private static GameObject Add(Transform parent, string folder, string model, string texture, string textureFolder, bool fallbackTexture = false, System.Collections.Generic.IReadOnlyDictionary<uint, AvatarBoneTransform> boneTransforms = null, string skeletonModelHint = null, bool loadTextures = true, AvatarBoneTransform rigidAttachment = null)
         {
             if (string.IsNullOrEmpty(model)) return null;
             string modelPath = Path.Combine("chr", "_face", "20_EDIT", folder);
             string texturePath = Path.Combine("chr", "_face", "20_EDIT", textureFolder);
             try
             {
-                GameObject part = G4ModelLoader.CreateModel(modelPath, model, texture, texturePath, fallbackTexture, true, boneTransforms, skeletonModelHint, loadTextures);
+                GameObject part = G4ModelLoader.CreateModel(modelPath, model, texture, texturePath, fallbackTexture, true, boneTransforms, skeletonModelHint, loadTextures, rigidAttachment: rigidAttachment);
                 part.transform.SetParent(parent, false);
                 return part;
             }
@@ -711,7 +711,10 @@ namespace G4Composition
             pose.Position += new Vector2(sharedHorizontal ? 0f : change.Position.x, change.Position.y);
             if (sharedHorizontal) pose.SharedHorizontalOffset += change.Position.x;
             pose.Scale *= change.Scale;
-            pose.Rotation += change.Rotation;
+            // Native facial compositing builds its rotation from -angle/2. The
+            // recipe angle therefore runs opposite to our forward pose rotation.
+            // Convert once here so child poses and the eye-opening mask agree.
+            pose.Rotation -= change.Rotation;
             if (Mathf.Abs(change.ModelHeight) < .000001f) return;
             // Convert model-space height to the mesh's actual UV span. The output
             // atlas has two rows and centered config coordinates span two units.

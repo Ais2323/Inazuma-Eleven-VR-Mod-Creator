@@ -63,5 +63,19 @@
     "CharSubPosition": "副位置",
     "NoTeam": "無所屬",
     "SelectIconFront": "選擇前圖（關閉取消）",
-    "SelectIconBack": "選擇後圖（關閉使用空白）"
+    "SelectIconBack": "選擇後圖（關閉使用空白）",
+    "Skills": "技策板",
+    "SkillNone": "無",
+    "TechniqueVariant": "招式版本",
+    "TechniqueRarity": "稀有度",
+    "CharSkillMain": "主要技能",
+    "CharSkillSub": "副技能",
+    "Status": "個體值",
+    "StatusKick": "腳力",
+    "StatusControl": "控球",
+    "StatusTechnique": "技巧",
+    "StatusPressure": "逼搶",
+    "StatusPhysical": "體格",
+    "StatusAgility": "敏捷",
+    "StatusIntelligence": "智慧"
 }

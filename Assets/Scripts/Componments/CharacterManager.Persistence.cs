@@ -25,7 +25,7 @@ public partial class CharacterManager : MonoBehaviour
         {
             var document = new CharacterMakerDocument
             {
-                version = 11,
+                version = 14,
                 targetId = nowCharacterData.id,
                 identity = nowCharacterData.identity?.Clone(),
                 voiceCharacterId = nowCharacterData.voiceCharacterId, voiceAvatarCode = nowCharacterData.voiceAvatarCode,

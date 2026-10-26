@@ -55,7 +55,11 @@ Shader "Hidden/AvatarFaceComposite"
                 fixed3 eye = tex2D(_EyeMask, (sourceCell + eyeP) / _AtlasGrid.xy).rgb;
                 alpha *= saturate(1 - max(eye.r, max(eye.g, eye.b))) * Inside(eyeP);
             }
-            return fixed4(lerp(under.rgb, rgb, alpha), alpha + under.a * (1 - alpha));
+            // Keep straight alpha between layers; the opaque face atlas blends
+            // this result over its feature foundation exactly once.
+            float outAlpha = alpha + under.a * (1 - alpha);
+            float3 outRgb = (rgb * alpha + under.rgb * under.a * (1 - alpha)) / max(outAlpha, .00001);
+            return fixed4(outRgb, outAlpha);
         }
         ENDCG
     }}

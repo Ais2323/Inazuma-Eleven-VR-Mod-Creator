@@ -96,7 +96,7 @@ namespace G4Composition
             }
             throw new InvalidDataException("Unknown Avatar Recipe body type " + selected + " for style " + gender + ".");
         }
-        public static AvatarBoneTransform ResolveHeadAttachment(AvatarRecipeData recipe)
+        public static AvatarBoneTransform ResolveHeadAttachment(AvatarRecipeData recipe, int slot = 0)
         {
             string suffix = BodySuffix(recipe);
             string body = suffix == "small" || suffix == "smallfat" ? "c000201_edit" :
@@ -113,7 +113,7 @@ namespace G4Composition
                 if (parameter == "meshAttachOffset")
                 {
                     if (active) break;
-                    active = row.Int(1) == 0;
+                    active = row.Int(1) == slot;
                     found |= active;
                 }
                 if (!active) continue;
@@ -123,7 +123,7 @@ namespace G4Composition
                 if (parameter == "meshAttachOffset_scale") result.Scale = row.Values.Length == 2
                     ? Vector3.one * V(1) : new Vector3(V(1), V(2), V(3));
             }
-            if (!found) throw new InvalidDataException("Missing head mesh attachment in " + path);
+            if (!found) throw new InvalidDataException("Missing mesh attachment slot " + slot + " in " + path);
             return result;
         }
         static string ResolveBaseFaceModel(AvatarRecipeData recipe, string directory)

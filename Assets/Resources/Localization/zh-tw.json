@@ -62,5 +62,13 @@
     "CharSubPosition": "副位置",
     "NoTeam": "無所屬",
     "SelectIconFront": "選擇前圖（關閉取消）",
-    "SelectIconBack": "選擇後圖（關閉使用空白）"
+    "SelectIconBack": "選擇後圖（關閉使用空白）",
+    "Skills": "技能",
+    "SkillNone": "無",
+    "TechniqueVariant": "招式版本",
+    "TechniqueRarity": "稀有度",
+    "SkillsMain": "主要招式",
+    "SkillsAlternate": "替補招式",
+    "CharSkillMain": "主要技能",
+    "CharSkillSub": "副技能"
 }

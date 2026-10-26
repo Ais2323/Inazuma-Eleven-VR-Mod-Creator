@@ -49,6 +49,7 @@ namespace G4Composition
                 }
                 dirty.Add(path);
             }
+            ApplySkills(identity, targetId, character.UInt(0), catalog);
             foreach (var locale in identity.locales ?? new List<CharacterLocalizedIdentity>())
             {
                 if (!CharacterIdentityCatalog.Locales.Contains(locale.locale)) throw new InvalidDataException("無效的名字語系。");
@@ -61,6 +62,29 @@ namespace G4Composition
             uint[] equipment = catalog.Equipment(identity.team, identity.sourceSeries, identity.gender, identity.position == 1);
             for (int i = 0; i < equipment.Length; i++) Set(model, 5 + i, equipment[i]);
             return true;
+        }
+        void ApplySkills(CharacterIdentitySettings identity, string targetId, uint baseId, CharacterIdentityCatalog catalog)
+        {
+            if (identity.techniques == null) return;
+            string path = CharacterIdentityCatalog.Find(Path.Combine(DumpDataManager.CommonPath, "gamedata", "character"), "chara_param_");
+            var table = Table(path); var seen = new HashSet<uint>();
+            foreach (var variant in identity.techniques) {
+                if (variant == null || !seen.Add(variant.parameterId) || variant.skills?.Length != 9 || variant.levels?.Length != 9 ||
+                    variant.originalSkills?.Length != 9 || variant.originalLevels?.Length != 9)
+                    throw new InvalidDataException(targetId + ": invalid technique slots.");
+                var row = table.Rows.SingleOrDefault(r => r.Name == "CHARA_PARAM_INFO" && r.UInt(0) == variant.parameterId && r.UInt(1) == baseId)
+                    ?? throw new InvalidDataException(targetId + ": technique variant belongs to another character.");
+                for (int i = 0; i < 9; i++) {
+                    bool skillChanged = variant.skills[i] != variant.originalSkills[i], levelChanged = variant.levels[i] != variant.originalLevels[i];
+                    if (!skillChanged && !levelChanged) continue;
+                    if (skillChanged && variant.skills[i] != 0 && !catalog.SkillIds.ContainsKey(variant.skills[i]) ||
+                        variant.levels[i] < 0 || variant.levels[i] > 99)
+                        throw new InvalidDataException(targetId + ": invalid skill or unlock level in slot " + (i + 1));
+                    if (skillChanged) Set(row, 11 + i * 2, variant.skills[i]);
+                    if (levelChanged) Set(row, 12 + i * 2, variant.levels[i]);
+                    dirty.Add(path);
+                }
+            }
         }
         void UpdateBase(CfgTable.Row character, int field, long value, long original)
         {

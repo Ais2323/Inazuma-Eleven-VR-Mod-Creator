@@ -70,7 +70,7 @@ public sealed class CharacterMakerDocument
     public static CharacterMakerDocument Read(string path)
     {
         CharacterMakerDocument document = JsonUtility.FromJson<CharacterMakerDocument>(File.ReadAllText(path));
-        if (document == null || document.version < 1 || document.version > 11)
+        if (document == null || document.version < 1 || document.version > 14)
             throw new InvalidDataException("不支援的 CharacterMaker 存檔版本。");
         document.head ??= new CharacterMakerPart();
         document.hair ??= new CharacterMakerPart();
