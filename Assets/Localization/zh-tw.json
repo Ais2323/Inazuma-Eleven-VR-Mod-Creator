@@ -77,5 +77,15 @@
     "StatusPressure": "逼搶",
     "StatusPhysical": "體格",
     "StatusAgility": "敏捷",
-    "StatusIntelligence": "智慧"
+    "StatusIntelligence": "智慧",
+    "CharBuildType": "容易出現的流派類型",
+    "CharBuildType0": "必殺",
+    "CharBuildType1": "反擊",
+    "CharBuildType2": "閃緣",
+    "CharBuildType3": "士氣",
+    "CharBuildType4": "粗暴",
+    "CharBuildType5": "正義",
+    "CharBuildType6": "自由",
+    "ModName": "模組名稱",
+    "ModNamePlaceholder": "請輸入模組名稱"
 }

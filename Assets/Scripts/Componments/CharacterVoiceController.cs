@@ -138,7 +138,7 @@ public partial class CharacterVoiceController : MonoBehaviour
         }
         else
         {
-            string id = string.IsNullOrWhiteSpace(document.voiceCharacterId) ? document.targetId : document.voiceCharacterId;
+            string id = string.IsNullOrWhiteSpace(document.voiceCharacterId) ? document.TemplateId : document.voiceCharacterId;
             if (!CharacterManager.IsSafeCharacterId(id)) throw new InvalidDataException("語音來源角色 ID 無效。");
             SetVoiceSelection(id, null, null, null, null);
         }

@@ -7,6 +7,10 @@ using UnityEngine.Events;
 public class CharacterData
 {
     public string id;
+    public string newCharacterKey = Guid.NewGuid().ToString("N");
+    public string templateId = "c01000010";
+    public bool freeSoulInShop;
+    public string TemplateId => string.IsNullOrWhiteSpace(id) ? templateId : id;
     public CharacterIdentitySettings identity;
     public string voiceCharacterId, voiceAvatarCode, voiceName, voicePortraitPng;
     public string headId;

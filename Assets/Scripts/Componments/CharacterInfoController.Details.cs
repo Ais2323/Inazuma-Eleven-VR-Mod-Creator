@@ -19,8 +19,8 @@ public partial class CharacterInfoController
         { "jp", "ja" }, { "zhcn", "zh_hans" }, { "zhtw", "zh_hant" }
     };
     static readonly int[] GenderValues = { 1, 2, 5 };
-    CharacterIdentitySettings Identity => !string.IsNullOrWhiteSpace(nowCharacterData.id) &&
-        string.Equals(nowCharacterData.identity?.sourceId, nowCharacterData.id, StringComparison.OrdinalIgnoreCase)
+    CharacterIdentitySettings Identity => !string.IsNullOrWhiteSpace(nowCharacterData.TemplateId) &&
+        string.Equals(nowCharacterData.identity?.sourceId, nowCharacterData.TemplateId, StringComparison.OrdinalIgnoreCase)
         ? nowCharacterData.identity : null;
 
     void InitializeDetails(bool dumpReady)
@@ -91,7 +91,7 @@ public partial class CharacterInfoController
     }
     internal void RestoreIdentity(CharacterIdentitySettings saved)
     {
-        if (saved != null && string.Equals(saved.sourceId, nowCharacterData.id, StringComparison.OrdinalIgnoreCase))
+        if (saved != null && string.Equals(saved.sourceId, nowCharacterData.TemplateId, StringComparison.OrdinalIgnoreCase))
         {
             nowCharacterData.identity = saved.Clone();
             foreach (var locale in Identity.locales)

@@ -88,6 +88,7 @@ public partial class CharacterManager : MonoBehaviour
         }
         bool dumpReady = DumpDataManager.ValidateSavedPath();
         infoPage.Initialize(dumpReady);
+        if (dumpReady && string.IsNullOrWhiteSpace(nowCharacterData.id)) infoPage.InitializeNewCharacter();
         if (iconController != null) iconController.Initialize(dumpReady);
         RefreshAllTransformInputs(); UpdateRightPanel();
     }

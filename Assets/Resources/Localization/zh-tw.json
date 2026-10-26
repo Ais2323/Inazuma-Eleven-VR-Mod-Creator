@@ -70,5 +70,15 @@
     "SkillsMain": "主要招式",
     "SkillsAlternate": "替補招式",
     "CharSkillMain": "主要技能",
-    "CharSkillSub": "副技能"
+    "CharSkillSub": "副技能",
+    "CharBuildType": "容易出現的流派類型",
+    "CharBuildType0": "必殺",
+    "CharBuildType1": "反擊",
+    "CharBuildType2": "閃緣",
+    "CharBuildType3": "士氣",
+    "CharBuildType4": "粗暴",
+    "CharBuildType5": "正義",
+    "CharBuildType6": "自由",
+    "ModName": "模組名稱",
+    "ModNamePlaceholder": "請輸入模組名稱"
 }

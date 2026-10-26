@@ -48,6 +48,7 @@ namespace G4Composition
                 var skills = Enumerable.Range(0, 9).Select(i => r.UInt(11 + i * 2)).ToArray();
                 var levels = Enumerable.Range(0, 9).Select(i => checked((int)r.Int(12 + i * 2))).ToArray();
                 return new CharacterTechniqueSettings { parameterId = r.UInt(0), rarity = checked((int)r.Int(41)), affinity = checked((int)r.Int(2)),
+                    hasBuildType = true, buildType = checked((int)r.Int(5)), originalBuildType = checked((int)r.Int(5)),
                     skills = skills, originalSkills = (uint[])skills.Clone(), levels = levels, originalLevels = (int[])levels.Clone() };
             }).ToList();
         }

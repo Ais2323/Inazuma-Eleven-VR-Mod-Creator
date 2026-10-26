@@ -52,7 +52,7 @@ public sealed class CharacterMakerBatchExporter
         ResolvePart(saved, saved.hair, hair, 2, targetAnchor);
         if (other != null) ResolvePart(saved, saved.other, other, 3, targetAnchor);
         saved.uniformHem = saved.Hem;
-        saved.version = 14;
+        saved.version = 15;
 
         var sources = new Dictionary<string, RawHeadAsset>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in new[] { target, head, hair }) sources[source.RelativePath] = source;
@@ -100,21 +100,52 @@ public sealed class CharacterMakerBatchExporter
         {
             string portrait = Path.Combine(outputRoot, "dx11", "menu", "200_icon", "10_icon_chr", "face");
             Directory.CreateDirectory(portrait);
-            File.WriteAllBytes(Path.Combine(portrait, built.Document.targetId + "_l.g4tx"), built.Portrait);
+            File.WriteAllBytes(Path.Combine(portrait, built.Document.targetId + "_l.g4tx"), RenamePortrait(built.Portrait, built.Document.targetId));
         }
     }
 
-    public static bool WriteMergedCharacterSettings(IEnumerable<CharacterMakerDocument> documents, string outputRoot)
+    public static byte[] RenamePortrait(byte[] container, string characterId)
+    {
+        if (string.IsNullOrWhiteSpace(characterId)) throw new InvalidDataException("Portrait character ID is missing.");
+        var layers = RawTexture.Read(container, characterId + " portrait");
+        if (layers.Count != 2) throw new InvalidDataException("Portrait must contain front and back layers.");
+        string[] originalNames = layers.Select(t => t.Name).ToArray();
+        bool changed = false;
+        for (int i = 0; i < layers.Count; i++) {
+            string suffix = "_" + (i + 1) + "_l00";
+            if (!layers[i].Name.EndsWith(suffix, StringComparison.Ordinal))
+                throw new InvalidDataException("Unsupported portrait layer name: " + layers[i].Name);
+            string expected = characterId + suffix;
+            if (layers[i].Name == expected) continue;
+            layers[i].Name = expected; layers[i].Hash = G4TextureParser.Crc32(expected); changed = true;
+        }
+        if (!changed) return RawTexture.SortLookupIndices(container);
+        if (layers.Select((t, i) => t.Name.Length == originalNames[i].Length).All(same => same)) {
+            // Character IDs have equal width. Preserve all native padding, descriptors and DDS bytes.
+            byte[] output = (byte[])container.Clone();
+            int hashes = (BitConverter.ToUInt16(container, 4) + layers.Count * 48 + 15) & ~15;
+            int names = (hashes + layers.Count * 5 + 3) & ~3;
+            for (int i = 0; i < layers.Count; i++) {
+                Buffer.BlockCopy(BitConverter.GetBytes(layers[i].Hash), 0, output, hashes + i * 4, 4);
+                byte[] name = System.Text.Encoding.ASCII.GetBytes(layers[i].Name);
+                Buffer.BlockCopy(name, 0, output, names + BitConverter.ToUInt16(container, names + i * 2), name.Length);
+            }
+            RawTexture.Read(output, characterId + " renamed portrait");
+            return RawTexture.SortLookupIndices(output);
+        }
+        return RawTexture.Write(container, layers);
+    }
+    public static bool WriteMergedCharacterSettings(IEnumerable<CharacterMakerDocument> documents, string outputRoot, CharacterCatalog shared = null)
     {
         CharacterMakerDocument[] saved = documents.ToArray();
         if (saved.Length == 0) return false;
         string directory = Path.Combine(DumpDataManager.CommonPath, "gamedata", "character");
         string basePath = FindVersionedTable(directory, "chara_base_");
         string modelPath = FindVersionedTable(directory, "chara_model_");
-        CfgTable bases = CfgTable.Read(File.ReadAllBytes(basePath), basePath);
-        CfgTable models = CfgTable.Read(File.ReadAllBytes(modelPath), modelPath);
-        var identityWriter = new CharacterIdentityWriter(bases);
-        bool changed = false;
+        CfgTable bases = shared?.Base ?? CfgTable.Read(File.ReadAllBytes(basePath), basePath);
+        CfgTable models = shared?.Models ?? CfgTable.Read(File.ReadAllBytes(modelPath), modelPath);
+        var identityWriter = new CharacterIdentityWriter(bases, shared == null ? null : new[] { shared.Parameters, shared.Models }.Concat(shared.TextTables.Values));
+        bool changed = false, iconsWritten = false;
         foreach (CharacterMakerDocument source in saved)
         {
             var document = JsonUtility.FromJson<CharacterMakerDocument>(JsonUtility.ToJson(source));
@@ -138,9 +169,14 @@ public sealed class CharacterMakerBatchExporter
             bool rowChanged = model.UInt(4) != replacement.UInt(0) || model.Int(31) != NativeBodyShape.ToNativeChestSize(document.chestSize) ||
                 model.Int(12) != document.uniformCollar || model.Int(13) != (hem == 1 ? 1 : 0) || model.UInt(16) != skin;
             rowChanged |= identityWriter.Apply(document.identity, document.targetId, character, model);
+            uint uniform = NativeUniformFashion.ExportModel(model.UInt(5), replacement, document.uniformSleeve, hem);
+            rowChanged |= model.UInt(5) != uniform;
+            iconsWritten |= NativeUniformFashion.WriteHemIconFallbacks(uniform, replacement, outputRoot);
             rowChanged |= identityWriter.ApplyFacial(document, model);
             identityWriter.ApplyVoice(document);
             if (!rowChanged) continue;
+            // Resolve the style within the equipped kit, after any team equipment change.
+            SetInteger(model, 5, uniform);
             SetInteger(model, 4, replacement.UInt(0));
             SetInteger(model, 31, NativeBodyShape.ToNativeChestSize(document.chestSize));
             SetInteger(model, 12, document.uniformCollar);
@@ -149,7 +185,7 @@ public sealed class CharacterMakerBatchExporter
             changed = true;
         }
         bool identityChanged = identityWriter.Write(outputRoot);
-        if (!changed) return identityChanged;
+        if (!changed) return identityChanged || iconsWritten;
         byte[] bytes = models.Write();
         CfgTable.Read(bytes, "merged character settings validation");
         string relative = modelPath.Substring(DumpDataManager.CommonPath.Length + 1);
@@ -161,7 +197,7 @@ public sealed class CharacterMakerBatchExporter
 
     private static void ValidateDocument(CharacterMakerDocument saved)
     {
-        if (saved == null || saved.version < 1 || saved.version > 14) throw new InvalidDataException("不支援的存檔版本。");
+        if (saved == null || saved.version < 1 || saved.version > 15) throw new InvalidDataException("不支援的存檔版本。");
         if (saved.uniformSleeve < 0 || saved.uniformSleeve > 1 || saved.Hem < 0 || saved.Hem > 2) throw new InvalidDataException("無效的袖子或下擺設定。");
         if (!SafeId(saved.targetId) || !SafeId(saved.head?.sourceId) || !SafeId(saved.hair?.sourceId))
             throw new InvalidDataException("目標、Head 或 Hair 的角色 ID 無效。");

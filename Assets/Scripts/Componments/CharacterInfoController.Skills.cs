@@ -12,6 +12,8 @@ public partial class CharacterInfoController
     readonly List<InputField> skillLevels = new();
     List<CharacterIdentityCatalog.SkillOption> skillChoices;
     public Dropdown techniqueDropdown;
+    public Transform buildTypeButtonsParent;
+    readonly List<Button> buildTypeButtons = new();
     string skillsLocale;
     bool skillsBound, skillsBindingAttempted;
     CharacterTechniqueSettings SelectedTechnique => Identity?.techniques?.FirstOrDefault(t => t.parameterId == Identity.techniqueParameterId);
@@ -54,6 +56,20 @@ public partial class CharacterInfoController
                 Identity.techniqueParameterId = Identity.techniques[index].parameterId; RefreshSkills();
             }
         });
+        if (buildTypeButtonsParent != null) {
+            foreach (Transform child in buildTypeButtonsParent) {
+                var button = child.GetComponent<Button>(); if (button == null) continue;
+                int value = buildTypeButtons.Count;
+                button.onClick.AddListener(() => {
+                    var selected = SelectedTechnique;
+                    if (selected == null || value > 5) return;
+                    selected.buildType = value; selected.hasBuildType = true; RefreshSkills();
+                });
+                buildTypeButtons.Add(button);
+            }
+            if (buildTypeButtons.Count != 6) throw new InvalidOperationException("Build type requires six authored icon buttons.");
+        }
+        else Debug.LogError("Build type buttons are not bound in CharacterInfoController.");
         skillsBound = true;
         if (dumpReady) try { identityCatalog = CharacterIdentityCatalog.Get(); SetSkillChoices(); }
             catch (Exception e) { Debug.LogWarning("Skills: " + e.Message); }
@@ -82,7 +98,19 @@ public partial class CharacterInfoController
             techniqueDropdown.SetValueWithoutNotify(Math.Max(0, Identity?.techniques?.FindIndex(t => t.parameterId == Identity.techniqueParameterId) ?? 0));
             techniqueDropdown.RefreshShownValue();
         }
+        // Additive save fields: legacy saves inherit each native variant's own value.
+        if (identityCatalog != null && Identity?.techniques != null && Identity.techniques.Any(t => !t.hasBuildType)) {
+            var native = identityCatalog.LoadTechniques(Identity.sourceId);
+            foreach (var variant in Identity.techniques.Where(t => !t.hasBuildType)) {
+                var baseline = native.FirstOrDefault(t => t.parameterId == variant.parameterId);
+                if (baseline == null) continue;
+                variant.buildType = variant.originalBuildType = baseline.buildType; variant.hasBuildType = true;
+            }
+        }
         var selected = SelectedTechnique;
+        SetSelectedButton(buildTypeButtons, selected?.hasBuildType == true ? selected.buildType : -1);
+        if (selected == null || !selected.hasBuildType)
+            foreach (var button in buildTypeButtons) button.interactable = false;
         for (int i = 0; i < skillDropdowns.Count; i++) {
             var dropdown = skillDropdowns[i]; var level = skillLevels[i];
             bool valid = selected?.skills?.Length == 9 && selected.levels?.Length == 9 && skillChoices != null;

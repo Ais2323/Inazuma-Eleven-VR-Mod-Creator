@@ -21,7 +21,7 @@ public partial class CharacterInfoController : MonoBehaviour
     {
         if (initialized) return;
         initialized = true;
-        InitializeDetails(dumpReady); InitializeSkills(dumpReady);
+        InitializeDetails(dumpReady); InitializeSkills(dumpReady); InitializeNewControls();
         BindBodyTypeButtons(); BindUniformCollarButtons(); BindEquipmentButtons(); BindChestSizeButtons();
         RefreshBodySettingButtons(); ExcludeBodyLayerFromIconCamera();
         if (dumpReady) LoadDefaultBodyPreviews();
@@ -658,8 +658,8 @@ public partial class CharacterInfoController : MonoBehaviour
 
     internal void RestoreSavedBody(CharacterMakerDocument document, List<string> warnings)
     {
-        if (string.IsNullOrWhiteSpace(document.targetId) ||
-            !string.Equals(nowCharacterData.id, document.targetId, StringComparison.OrdinalIgnoreCase)) return;
+        if (string.IsNullOrWhiteSpace(document.TemplateId) ||
+            !string.Equals(nowCharacterData.TemplateId, document.TemplateId, StringComparison.OrdinalIgnoreCase)) return;
         try
         {
             document.UpgradeBodySettings(bodyModelTable);
@@ -738,7 +738,7 @@ public partial class CharacterInfoController : MonoBehaviour
     {
         manager.RefreshPageAvailability();
         if (!manager.HasAvatarInfo()) return;
-        if (string.IsNullOrWhiteSpace(nowCharacterData.id) || bodyParent == null) return;
+        if (string.IsNullOrWhiteSpace(nowCharacterData.TemplateId) || bodyParent == null) return;
         try
         {
             if (bodyModelTable == null) LoadBodyTables();
@@ -750,7 +750,7 @@ public partial class CharacterInfoController : MonoBehaviour
                 Identity.gender = body.Int(5) >= 4 ? 2 : 1;
                 RefreshIdentityFields();
             }
-            var document = new CharacterMakerDocument { version = 14, targetId = nowCharacterData.id,
+            var document = new CharacterMakerDocument { version = 15, targetId = nowCharacterData.TemplateId,
                 bodyType = settings.BodyType, bodyVariantId = settings.VariantId,
                 bodyAvatarCode = settings.Code, chestSize = settings.ChestSize,
                 uniformCollar = settings.Collar, uniformSleeve = settings.Sleeve, uniformHem = settings.Hem,

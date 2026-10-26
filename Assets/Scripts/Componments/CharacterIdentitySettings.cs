@@ -27,6 +27,8 @@ public sealed class CharacterTechniqueSettings
 {
     public uint parameterId;
     public int rarity, affinity;
+    public bool hasBuildType;
+    public int buildType, originalBuildType;
     public uint[] skills, originalSkills;
     public int[] levels, originalLevels;
 }

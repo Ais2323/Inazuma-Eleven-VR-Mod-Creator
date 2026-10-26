@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -67,11 +67,17 @@ namespace G4Composition
         {
             public string InternalName, ModelRelativePath, PortraitTemplate, SourcePortraitStem;
             public uint CharacterId, ParameterId, ModelId, ShopId;
+            public Dictionary<uint, uint> ParameterMap = new();
             public Dictionary<string, byte[]> Files = new Dictionary<string, byte[]>();
             public Dictionary<string, string> SourceHashes = new Dictionary<string, string>();
         }
         static CfgTable.Row Single(CfgTable table, string type, uint id) => table.Rows.Single(r => r.Name == type && r.UInt(0) == id);
         static void Set(CfgTable.Row row, int index, long value) { if (row.Types[index] != 1) throw new InvalidDataException(row.Name + ": expected integer field " + index); row.Values[index] = value; }
+        public static string StableInternalName(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) throw new InvalidDataException("Missing persistent new character key.");
+            return "c" + (90000000 + G4TextureParser.Crc32(key) % 9000000).ToString("D8");
+        }
         public Result Build(CharacterCatalog catalog, ExportRequest request, string dx11, CancellationToken token)
         {
             var verifiedVersions = new Dictionary<CfgTable, string>
@@ -95,17 +101,13 @@ namespace G4Composition
             var occupied = new HashSet<uint>(all.SelectMany(t => t.Rows).SelectMany(r => r.Values.Select((v, i) => new { v, type = r.Types[i] })).Where(v => v.type == 1).Select(v => unchecked((uint)Convert.ToInt64(v.v))));
             var result = new Result();
             foreach (var table in all) result.SourceHashes.Add(table.Source, RawHeadAsset.Digest(File.ReadAllBytes(table.Source)));
-            uint[] allocated = null; string name = null;
-            int start = (int)(G4TextureParser.Crc32(request.Document.Id) % 9000000);
-            for (int i = 0; i < 9000000; i++)
-            {
-                name = "c" + (90000000 + (start + i) % 9000000).ToString("D8");
-                string[] keys = { name, "pc_para_" + name, "model_" + name, "name_" + name, "short_" + name, "upper_" + name, "desc_" + name, "shop_" + name };
-                allocated = keys.Select(G4TextureParser.Crc32).ToArray();
-                if (allocated.Distinct().Count() == allocated.Length && allocated.All(id => !occupied.Contains(id)) && !File.Exists(Path.Combine(dx11, "menu", "200_icon", "10_icon_chr", "face", name + "_l.g4tx"))) break;
-                allocated = null;
-            }
-            if (allocated == null) throw new InvalidDataException("No available character identifiers.");
+            // Identity must never depend on batch order or which other mods were exported first.
+            string name = StableInternalName(request.Document.Id);
+            string[] keys = { name, "pc_para_" + name, "model_" + name, "name_" + name, "short_" + name, "upper_" + name, "desc_" + name, "shop_" + name };
+            uint[] allocated = keys.Select(G4TextureParser.Crc32).ToArray();
+            if (allocated.Distinct().Count() != allocated.Length || allocated.Any(occupied.Contains) ||
+                File.Exists(Path.Combine(dx11, "menu", "200_icon", "10_icon_chr", "face", name + "_l.g4tx")))
+                throw new InvalidDataException("角色編號衝突：" + name + "。為保留更新後的角色身分，匯出已停止，不會自動改號。請將模組匯出到乾淨的資料夾，並確認沒有其他模組使用此編號。");
             result.InternalName = name; result.CharacterId = allocated[0]; result.ParameterId = allocated[1]; result.ModelId = allocated[2]; result.ShopId = allocated[7];
             result.ModelRelativePath = Path.Combine("99_CUSTOM", name, name + ".g4md");
             var clone = source.Clone(); Set(clone, 0, allocated[0]); clone.Values[1] = name;
@@ -137,6 +139,31 @@ namespace G4Composition
             var newSort = sort[0].Clone(); Set(newSort, 0, parameters.Length - 1);
             int at = insertion == sort.Length ? catalog.Parameters.Rows.IndexOf(sort.Last()) + 1 : catalog.Parameters.Rows.IndexOf(sort[insertion]);
             catalog.Parameters.Rows.Insert(at, newSort);
+            result.ParameterMap[parameter.UInt(0)] = allocated[1];
+            occupied.UnionWith(allocated);
+            foreach (var variant in settings.Variants ?? new List<CharacterTechniqueSettings>()) {
+                if (result.ParameterMap.ContainsKey(variant.parameterId)) continue;
+                var original = Single(catalog.Parameters, "CHARA_PARAM_INFO", variant.parameterId);
+                if (original.UInt(1) != source.UInt(0) || variant.skills?.Length != 9 || variant.levels?.Length != 9)
+                    throw new InvalidDataException("Invalid additional technique variant.");
+                uint newId = G4TextureParser.Crc32("pc_para_" + name + "_" + variant.parameterId.ToString("X8"));
+                if (newId == 0 || !occupied.Add(newId))
+                    throw new InvalidDataException("固定技能表編號衝突：" + name + "。匯出已停止，不會自動改號。");
+                var additional = original.Clone(); Set(additional, 0, newId); Set(additional, 1, allocated[0]);
+                Set(additional, 2, settings.Affinity); Set(additional, 3, settings.MainPosition); Set(additional, 4, settings.SubPosition);
+                for (int slot = 0; slot < 9; slot++) {
+                    if (variant.skills[slot] != 0 && !catalog.Skills.ContainsKey(variant.skills[slot]) || variant.levels[slot] < 0 || variant.levels[slot] > 99)
+                        throw new InvalidDataException("Invalid additional variant skill/level.");
+                    Set(additional, 11 + slot * 2, variant.skills[slot]); Set(additional, 12 + slot * 2, variant.levels[slot]);
+                }
+                AppendParameter(catalog.Parameters, additional); result.ParameterMap[variant.parameterId] = newId;
+            }
+            foreach (var variant in settings.Variants ?? new List<CharacterTechniqueSettings>()) {
+                if (!variant.hasBuildType) continue;
+                if (variant.buildType < 0 || variant.buildType > 6) throw new InvalidDataException("Invalid build type.");
+                var createdParameter = Single(catalog.Parameters, "CHARA_PARAM_INFO", result.ParameterMap[variant.parameterId]);
+                Set(createdParameter, 5, variant.buildType);
+            }
             var modelClone = model.Clone(); Set(modelClone, 0, allocated[2]); modelClone.Values[10] = "_face/" + result.ModelRelativePath.Replace('\\', '/');
             catalog.Models.Insert("CHARA_MODEL_INFO_LIST_BEG", "CHARA_MODEL_INFO_LIST_END", modelClone);
             foreach (var pair in catalog.TextTables)
@@ -156,7 +183,7 @@ namespace G4Composition
                 }
                 table.Insert(description ? "TEXT_INFO_BEGIN" : "NOUN_INFO_BEGIN", description ? "TEXT_INFO_END" : "NOUN_INFO_END", appended.ToArray());
             }
-            AddShop(catalog, allocated[7], parameter, allocated[1]);
+            if (settings.AddFreeShopItem) AddShop(catalog, allocated[7], parameter, allocated[1]);
             foreach (var table in all)
             {
                 byte[] bytes = table.Write();
@@ -173,11 +200,13 @@ namespace G4Composition
                 !restoredSort.Select(i => restoredParameters[i].UInt(0)).SequenceEqual(restoredParameters.Select(r => r.UInt(0)).OrderBy(id => id))) throw new InvalidDataException("Parameter sort-index validation failed.");
             for (int i = 0; i < 7; i++) if (restored.Int(29 + i) != settings.StatModifiers[i]) throw new InvalidDataException("Stat modifier roundtrip mismatch.");
             for (int i = 0; i < 9; i++) if (restored.UInt(11 + 2 * i) != settings.Skills[i] || restored.Int(12 + 2 * i) != settings.UnlockLevels[i]) throw new InvalidDataException("Skill roundtrip mismatch.");
+            if (settings.AddFreeShopItem) {
             var shopCheck = CfgTable.Read(result.Files[Path.Combine("common", catalog.Shop.Source.Substring(catalog.Common.Length + 1))], "shop output");
             var shopItem = Single(shopCheck, "SHOP_INFO_ITEM", allocated[7]);
             if (shopItem.UInt(24) != allocated[1]) throw new InvalidDataException("Shop/parameter reference mismatch.");
             var shopBlock = shopCheck.Rows.Skip(shopCheck.Rows.IndexOf(shopItem) + 1).TakeWhile(r => r.Name != "SHOP_INFO_ITEM" && r.Name != "SHOP_INFO_ITEM_LIST_END").ToArray();
-            if (shopBlock.Count(r => r.Name == "SHOP_INFO_ITEM_CONSUME") != 1 || shopBlock.Single(r => r.Name == "SHOP_INFO_ITEM_CONSUME").Int(1) != 0 || shopBlock.Any(r => r.Name == "SHOP_INFO_ITEM_CONDITION")) throw new InvalidDataException("Free shop item validation failed.");
+            if (shopBlock.Count(r => r.Name == "SHOP_INFO_ITEM_CONSUME") != 1 || shopBlock.Single(r => r.Name == "SHOP_INFO_ITEM_CONSUME").Int(2) != 0 || shopBlock.Single(r => r.Name == "SHOP_INFO_ITEM_CONSUME").UInt(0) != FreeSoulParameter(catalog) || shopBlock.Any(r => r.Name == "SHOP_INFO_ITEM_CONDITION")) throw new InvalidDataException("Free shop item validation failed.");
+            }
             string portraitDirectory = Path.Combine(dx11, "menu", "200_icon", "10_icon_chr", "face");
             result.SourcePortraitStem = source.Text(1);
             result.PortraitTemplate = Path.Combine(portraitDirectory, result.SourcePortraitStem + "_l.g4tx");
@@ -185,7 +214,73 @@ namespace G4Composition
             result.SourceHashes.Add(result.PortraitTemplate, RawHeadAsset.Digest(File.ReadAllBytes(result.PortraitTemplate)));
             return result;
         }
-        static void AddShop(CharacterCatalog c, uint itemId, CfgTable.Row parameter, uint parameterId)
+        internal static uint Allocate(string key, HashSet<uint> occupied)
+        {
+            for (int i = 0; i < 1000000; i++) {
+                uint id = G4TextureParser.Crc32(i == 0 ? key : key + "_" + i);
+                if (id != 0 && occupied.Add(id)) return id;
+            }
+            throw new InvalidDataException("No available identifiers.");
+        }
+        static void AppendParameter(CfgTable table, CfgTable.Row row)
+        {
+            int last = table.Rows.FindLastIndex(r => r.Name == "CHARA_PARAM_INFO");
+            var marker = table.Rows.First(r => r.Name == "CHARA_PARAM_INFO_LIST_BEG");
+            Set(marker, 0, marker.Int(0) + 1); table.Rows.Insert(last + 1, row);
+            var parameters = table.Rows.Where(r => r.Name == "CHARA_PARAM_INFO").ToArray();
+            var sort = table.Rows.Where(r => r.Name == "__SORT_INDEX").ToArray();
+            int insertion = parameters.Take(parameters.Length - 1).Count(r => r.UInt(0) < row.UInt(0));
+            var next = sort[0].Clone(); Set(next, 0, parameters.Length - 1);
+            int at = insertion == sort.Length ? table.Rows.IndexOf(sort.Last()) + 1 : table.Rows.IndexOf(sort[insertion]);
+            table.Rows.Insert(at, next);
+        }
+        internal static uint FreeSoulParameter(CharacterCatalog c)
+        {
+            // Slot 00 is the generic avatar template. Slot 01 is the player's avatar,
+            // whose display name is resolved from the game save rather than a fixed text label.
+            var avatar = c.Base.Rows.SingleOrDefault(r => r.Name == "CHARA_BASE_INFO" && r.Text(1) == "edit_avatar01")
+                ?? throw new InvalidDataException("Missing player avatar soul reference.");
+            return c.Parameters.Rows.Single(r => r.Name == "CHARA_PARAM_INFO" && r.UInt(1) == avatar.UInt(0)).UInt(0);
+        }
+        static void SetFreeConsume(CfgTable.Row consume, uint soul)
+        {
+            if (consume.Values.Length != 3 || consume.Types.Any(t => t != 1))
+                throw new InvalidDataException("Unsupported shop consume schema.");
+            Set(consume, 0, soul); Set(consume, 1, 8); Set(consume, 2, 0);
+        }
+        internal static void NormalizeFreeShopBlock(CharacterCatalog c, CfgTable.Row item)
+        {
+            var shop = c.Shop; uint soul = FreeSoulParameter(c);
+            int start = shop.Rows.IndexOf(item);
+            var block = shop.Rows.Skip(start + 1).TakeWhile(r => r.Name != "SHOP_INFO_ITEM" && r.Name != "SHOP_INFO_ITEM_LIST_END").ToArray();
+            var marker = block.Single(r => r.Name == "SHOP_INFO_ITEM_CONSUME_LIST_BEG");
+            var consume = block.FirstOrDefault(r => r.Name == "SHOP_INFO_ITEM_CONSUME");
+            if (consume == null) {
+                consume = shop.Rows.FirstOrDefault(r => r.Name == "SHOP_INFO_ITEM_CONSUME")?.Clone()
+                    ?? throw new InvalidDataException("No shop consume template available.");
+                shop.Rows.Insert(shop.Rows.IndexOf(marker) + 1, consume);
+            }
+            Set(marker, 0, 1); SetFreeConsume(consume, soul);
+            foreach (var row in block) {
+                if (row.Name == "SHOP_INFO_ITEM_CONSUME" && row != consume) shop.Rows.Remove(row);
+                if (row.Name == "SHOP_INFO_ITEM_CONDITION_LIST_BEG") Set(row, 0, 0);
+                if (row.Name == "SHOP_INFO_ITEM_CONDITION") shop.Rows.Remove(row);
+            }
+        }
+        internal static void RepairGeneratedFreeShopEntries(CharacterCatalog c)
+        {
+            var characters = c.Base.Rows.Where(r => r.Name == "CHARA_BASE_INFO").ToDictionary(r => r.UInt(0), r => r.Text(1));
+            var parameters = c.Parameters.Rows.Where(r => r.Name == "CHARA_PARAM_INFO").ToDictionary(r => r.UInt(0), r => r.UInt(1));
+            foreach (var item in c.Shop.Rows.Where(r => r.Name == "SHOP_INFO_ITEM" && r.Values.Length == 27).ToArray()) {
+                if (!parameters.TryGetValue(item.UInt(24), out uint baseId) || !characters.TryGetValue(baseId, out string name)) continue;
+                bool generated = name.StartsWith("c9", StringComparison.Ordinal) && item.UInt(0) == G4TextureParser.Crc32("shop_" + name);
+                string key = "shop_free_" + name + "_" + item.UInt(24).ToString("X8");
+                for (int suffix = 0; !generated && suffix < 32; suffix++)
+                    generated = item.UInt(0) == G4TextureParser.Crc32(suffix == 0 ? key : key + "_" + suffix);
+                if (generated) NormalizeFreeShopBlock(c, item);
+            }
+        }
+        internal static void AddShop(CharacterCatalog c, uint itemId, CfgTable.Row parameter, uint parameterId)
         {
             var shop = c.Shop;
             var playable = new HashSet<uint>(c.Parameters.Rows.Where(r => r.Name == "CHARA_PARAM_INFO").Select(r => r.UInt(0)));
@@ -207,7 +302,10 @@ namespace G4Composition
                 if (row == source) { Set(copy, 0, itemId); Set(copy, 24, parameterId); Set(copy, 25, parameter.Int(41)); if (source.UInt(24) != parameter.UInt(0)) Set(copy, 26, 0); }
                 else if (copy.Types.Length > 0 && copy.Types[0] == 1 && copy.UInt(0) == source.UInt(24)) Set(copy, 0, parameterId);
                 if (copy.Name == "SHOP_INFO_ITEM_CONSUME_LIST_BEG") Set(copy, 0, 1);
-                if (copy.Name == "SHOP_INFO_ITEM_CONSUME") { if (consume) continue; Set(copy, 1, 0); consume = true; }
+                if (copy.Name == "SHOP_INFO_ITEM_CONSUME") {
+                    if (consume) continue;
+                    SetFreeConsume(copy, FreeSoulParameter(c)); consume = true;
+                }
                 if (copy.Name == "SHOP_INFO_ITEM_CONDITION_LIST_BEG") { Set(copy, 0, 0); conditionMarker = true; }
                 if (copy.Name == "SHOP_INFO_ITEM_CONDITION") continue;
                 block.Add(copy);

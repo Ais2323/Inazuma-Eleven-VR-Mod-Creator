@@ -39,8 +39,11 @@ public sealed class CharacterIconController : MonoBehaviour
         if (shirt != null) originalShirtScale = shirt.rectTransform.localScale;
         try
         {
-            foreach (string key in new[] { CharacterInfoController.DefaultUniformMember + "_00", CharacterInfoController.DefaultUniformMember + "_01" })
-                shirts.Add(key, LoadShirt(key));
+            string kit = CharacterInfoController.DefaultUniformStem + "_" + CharacterInfoController.DefaultUniformMember;
+            foreach (string stem in new[] { kit + "_00", kit + "_01", "u090141_" + kit + "_00", "u090146_" + kit + "_00" }) {
+                string path = Path.Combine(DumpDataManager.Dx11Path, "menu", "200_icon", "10_icon_chr", "uniform", stem + "_l.g4tx");
+                if (File.Exists(path)) shirts.Add(stem, LoadShirt(stem));
+            }
             RefreshShirt();
         }
         catch (Exception error)
@@ -89,7 +92,14 @@ public sealed class CharacterIconController : MonoBehaviour
         if (body == null) { shirt.enabled = false; return; }
         bool female = body.Int(5) >= 4;
         int collar = data.bodyDetailFlags & 0xffff;
-        string key = CharacterInfoController.DefaultUniformMember + (collar != 0 ? "_01" : "_00");
+        string kit = CharacterInfoController.DefaultUniformStem + "_" + CharacterInfoController.DefaultUniformMember;
+        string key = kit + (collar != 0 ? "_01" : "_00");
+        if (data.uniformSleeve != 0) {
+            var sleeve = NativeUniformFashion.Resolve(kit + "_slv", body);
+            string sleeveKey = sleeve == null ? null : Path.GetFileNameWithoutExtension(sleeve.Uniform) + "_" + kit + "_00";
+            if (sleeveKey != null && shirts.ContainsKey(sleeveKey)) key = sleeveKey;
+        }
+        // Hem changes the model below this crop and never selects a different portrait shirt.
         float width = manager.infoPage.GetIconBodyWidth(data.bodyType, data.chestSize);
         float referenceWidth = manager.infoPage.GetIconBodyWidth(female ? 2 : 1, data.chestSize);
         float ratio = width > 0 && referenceWidth > 0 ? width / referenceWidth : 1f;
@@ -119,7 +129,7 @@ public sealed class CharacterIconController : MonoBehaviour
                 float width = manager.infoPage.GetIconBodyWidth(type, chest);
                 float reference = manager.infoPage.GetIconBodyWidth(female ? 2 : 1, chest);
                 if (width <= 0 || reference <= 0) continue;
-                foreach (string collar in new[] { "_00", "_01" }) BodyShirt(CharacterInfoController.DefaultUniformMember + collar, width / reference, skin);
+                foreach (string key in shirts.Keys.ToArray()) BodyShirt(key, width / reference, skin);
             }
         }
     }
@@ -136,9 +146,8 @@ public sealed class CharacterIconController : MonoBehaviour
         return result;
     }
 
-    static ShirtIcon LoadShirt(string key)
+    static ShirtIcon LoadShirt(string stem)
     {
-        string stem = CharacterInfoController.DefaultUniformStem + "_" + key;
         string path = Path.Combine(DumpDataManager.Dx11Path, "menu", "200_icon", "10_icon_chr", "uniform", stem + "_l.g4tx");
         var layers = RawTexture.Read(File.ReadAllBytes(path), path);
         var cloth = layers.Single(t => t.Name == stem + "_1");

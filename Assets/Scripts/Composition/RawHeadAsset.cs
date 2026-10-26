@@ -114,6 +114,16 @@ namespace G4Composition
             }
             return result;
         }
+        public static byte[] SortLookupIndices(byte[] container)
+        {
+            var textures = Read(container, "G4TX lookup validation");
+            int hashes = (BitConverter.ToUInt16(container, 4) + textures.Count * 48 + 15) & ~15;
+            int indices = hashes + textures.Count * 4;
+            byte[] expected = Enumerable.Range(0, textures.Count).OrderBy(i => textures[i].Hash).Select(i => checked((byte)i)).ToArray();
+            if (expected.SequenceEqual(container.Skip(indices).Take(expected.Length))) return container;
+            byte[] output = (byte[])container.Clone(); Buffer.BlockCopy(expected, 0, output, indices, expected.Length);
+            return output;
+        }
         public static byte[] Write(byte[] templateHeader, IReadOnlyList<RawTexture> textures)
         {
             if (textures.Count == 0 || textures.Count > 255) throw new InvalidDataException("G4TX supports 1–255 textures in this writer.");
@@ -121,7 +131,7 @@ namespace G4Composition
             {
                 w.Write(templateHeader.Take(0x60).ToArray()); w.Write(new byte[textures.Count * 48]);
                 Pad(w, 16); foreach (var t in textures) w.Write(G4TextureParser.Crc32(t.Name));
-                for (int i = 0; i < textures.Count; i++) w.Write((byte)i);
+                foreach (int i in Enumerable.Range(0, textures.Count).OrderBy(i => G4TextureParser.Crc32(textures[i].Name))) w.Write(checked((byte)i));
                 Pad(w, 4); int names = (int)ms.Position; w.Write(new byte[textures.Count * 2]);
                 Pad(w, 4);
                 for (int i = 0; i < textures.Count; i++)

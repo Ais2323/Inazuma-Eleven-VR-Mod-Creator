@@ -9,6 +9,10 @@ public sealed class CharacterMakerDocument
 {
     public int version;
     public string targetId;
+    public bool isNewCharacter, freeSoulInShop;
+    public string newCharacterKey, templateId;
+    public bool IsNew => version >= 15 && isNewCharacter;
+    public string TemplateId => IsNew ? templateId : targetId;
     public CharacterIdentitySettings identity;
     public string voiceCharacterId, voiceAvatarCode, voiceName, voicePortraitPng;
     public string avatarCode;
@@ -70,7 +74,7 @@ public sealed class CharacterMakerDocument
     public static CharacterMakerDocument Read(string path)
     {
         CharacterMakerDocument document = JsonUtility.FromJson<CharacterMakerDocument>(File.ReadAllText(path));
-        if (document == null || document.version < 1 || document.version > 14)
+        if (document == null || document.version < 1 || document.version > 15)
             throw new InvalidDataException("不支援的 CharacterMaker 存檔版本。");
         document.head ??= new CharacterMakerPart();
         document.hair ??= new CharacterMakerPart();

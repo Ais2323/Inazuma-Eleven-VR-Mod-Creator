@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -47,6 +47,8 @@ namespace G4Composition
     [Serializable] public sealed class NewCharacterSettings
     {
         public uint TemplateBaseId, TemplateParameterId;
+        public bool AddFreeShopItem = true;
+        public List<CharacterTechniqueSettings> Variants;
         public string DisplayName = "New character";
         public int Affinity, MainPosition, SubPosition;
         public int[] StatModifiers = new int[7];

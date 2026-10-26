@@ -86,6 +86,8 @@ public partial class CharacterManager : MonoBehaviour
 
         if (option == 0)
         {
+            nowCharacterData.templateId = modelFrom.name;
+            infoPage.RefreshNewControls();
             if (iconController != null) iconController.ClearUploadedPortrait();
             hasTargetFaceAnchor = hasFaceAnchor;
             originalTargetFaceAnchor = targetFaceAnchor = faceAnchor;

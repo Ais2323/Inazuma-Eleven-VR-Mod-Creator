@@ -148,6 +148,100 @@ namespace G4Composition
             return (sleeve == 0 || AvatarRecipeParser.IsFashionAllowed(body, 2)) &&
                 (hem != 2 || AvatarRecipeParser.IsFashionAllowed(body, 3));
         }
+        static string IconTextureStem(string model, string texture)
+        {
+            // Native uniform icon lookup derives body digits from the geometry name.
+            if (model.Length < 7 || texture.Length < 7) return texture;
+            char[] name = texture.ToCharArray(); name[6] = model[6];
+            if (model[5] != '0') name[5] = model[5];
+            return new string(name);
+        }
+        public static bool WriteHemIconFallbacks(uint uniformId, CfgTable.Row body, string outputRoot)
+        {
+            string name = ModelName(uniformId);
+            if (name == null || !name.EndsWith("_blyR", StringComparison.OrdinalIgnoreCase)) return false;
+            string standard = name.Substring(0, name.Length - "_blyR".Length);
+            var tied = Resolve(name, body); var normal = Resolve(standard, body);
+            if (tied == null || normal == null) throw new InvalidDataException("Cannot resolve the uniform icon body.");
+            string mesh = Path.GetFileNameWithoutExtension(tied.Uniform);
+            string normalMesh = Path.GetFileNameWithoutExtension(normal.Uniform);
+            string texture = Path.GetFileNameWithoutExtension(tied.UniformTexture);
+            string normalTexture = Path.GetFileNameWithoutExtension(normal.UniformTexture);
+            string bodyStem = IconTextureStem(normalMesh, normalTexture);
+            string tiedStem = IconTextureStem(mesh, texture);
+            string directory = Path.Combine(DumpDataManager.Dx11Path, "menu", "200_icon", "10_icon_chr", "uniform");
+            bool written = false;
+            foreach (string collar in new[] { "00", "01", "10", "11" }) {
+                // Native lookup has two independent digits: body icon style, then collar.
+                // It chooses style 1 for native body indices 8/9/13/17 (0x22300).
+                // Hem is below the portrait crop. Retain a native matching style if available,
+                // otherwise use the normal portrait for the same body and kit.
+                string sourceStem = new[] { bodyStem + "_" + collar, normalTexture + "_" + collar, bodyStem + "_" + collar[0] + "0", normalTexture + "_" + collar[0] + "0", bodyStem + "_00", normalTexture + "_00" }
+                    .FirstOrDefault(stem => File.Exists(Path.Combine(directory, stem + "_l.g4tx")));
+                if (sourceStem == null) throw new FileNotFoundException("Missing base uniform icon: " + standard);
+                written |= WriteIconAlias(directory, sourceStem, tiedStem + "_" + collar, outputRoot);
+                // Native composite lookup always requests the _00 icon. Sleeve composites already
+                // have their own native images; only the tied hem receives a normal-kit alias.
+                if (collar == "00") written |= WriteIconAlias(directory, sourceStem, mesh + "_" + texture + "_00", outputRoot);
+            }
+            return written;
+        }
+        static bool WriteIconAlias(string directory, string sourceStem, string targetStem, string outputRoot)
+        {
+            if (File.Exists(Path.Combine(directory, targetStem + "_l.g4tx"))) return false;
+            byte[] source = File.ReadAllBytes(Path.Combine(directory, sourceStem + "_l.g4tx"));
+            var layers = RawTexture.Read(source, sourceStem);
+            if (layers.Count != 2) throw new InvalidDataException("Uniform icon needs cloth and skin-mask layers.");
+            if (layers.Any(layer => layer.Name != sourceStem + "_1" && layer.Name != sourceStem + "_2"))
+                throw new InvalidDataException("Unexpected uniform icon layer name.");
+            // The DX11 loader is sensitive to the native container's opaque table layout.
+            // Rename in place and copy DDS payloads into an equal-width native template;
+            // rebuilding the table previously moved the payload base by 16 bytes.
+            byte[] template = source;
+            string templateStem = sourceStem;
+            if (sourceStem.Length != targetStem.Length)
+            {
+                template = null;
+                foreach (string candidate in Directory.GetFiles(directory, "*_l.g4tx").OrderBy(p => p, StringComparer.Ordinal))
+                {
+                    string candidateStem = Path.GetFileName(candidate).Substring(0, Path.GetFileName(candidate).Length - "_l.g4tx".Length);
+                    if (candidateStem.Length != targetStem.Length) continue;
+                    byte[] bytes = File.ReadAllBytes(candidate);
+                    var candidateLayers = RawTexture.Read(bytes, candidate);
+                    if (candidateLayers.Count != 2 || candidateLayers.Any(t => t.Name != candidateStem + "_1" && t.Name != candidateStem + "_2")) continue;
+                    if (candidateLayers.Any(t => {
+                        var original = layers.Single(x => x.Name.EndsWith(t.Name.Substring(candidateStem.Length), StringComparison.Ordinal));
+                        return t.Dds.Length != original.Dds.Length || !t.Dds.Take(148).SequenceEqual(original.Dds.Take(148));
+                    })) continue;
+                    template = bytes; templateStem = candidateStem; break;
+                }
+                if (template == null) throw new InvalidDataException("No compatible native uniform icon layout: " + targetStem);
+            }
+            byte[] output = (byte[])template.Clone();
+            var templateLayers = RawTexture.Read(template, templateStem);
+            int hash = (0x60 + templateLayers.Count * 48 + 15) & ~15;
+            int names = (hash + templateLayers.Count * 5 + 3) & ~3;
+            int payload = (0x60 + BitConverter.ToInt32(template, 12) + 15) & ~15;
+            for (int i = 0; i < templateLayers.Count; i++)
+            {
+                string suffix = templateLayers[i].Name.Substring(templateStem.Length);
+                string renamed = targetStem + suffix;
+                int nameOffset = names + BitConverter.ToUInt16(template, names + i * 2);
+                byte[] nameBytes = System.Text.Encoding.ASCII.GetBytes(renamed);
+                Buffer.BlockCopy(nameBytes, 0, output, nameOffset, nameBytes.Length);
+                Buffer.BlockCopy(BitConverter.GetBytes(G4Runtime.G4TextureParser.Crc32(renamed)), 0, output, hash + i * 4, 4);
+                var pixels = layers.Single(t => t.Name == sourceStem + suffix).Dds;
+                int textureOffset = payload + BitConverter.ToInt32(template, 0x60 + i * 48 + 4);
+                Buffer.BlockCopy(pixels, 0, output, textureOffset, pixels.Length);
+            }
+            output = RawTexture.SortLookupIndices(output);
+            var check = RawTexture.Read(output, targetStem);
+            if (check.Any(t => !t.Dds.SequenceEqual(layers.Single(s => s.Name == sourceStem + t.Name.Substring(targetStem.Length)).Dds)))
+                throw new InvalidDataException("Uniform portrait image changed during binding.");
+            string target = Path.Combine(outputRoot, "dx11", "menu", "200_icon", "10_icon_chr", "uniform", targetStem + "_l.g4tx");
+            if (File.Exists(target) && File.ReadAllBytes(target).SequenceEqual(output)) return false;
+            Directory.CreateDirectory(Path.GetDirectoryName(target)); File.WriteAllBytes(target, output); return true;
+        }
         public static uint ExportModel(uint originalId, CfgTable.Row body, int sleeve, int hem)
         {
             if (!Allowed(body, sleeve, hem)) throw new InvalidDataException("The selected body does not support this sleeve or hem.");

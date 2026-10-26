@@ -25,8 +25,11 @@ public partial class CharacterManager : MonoBehaviour
         {
             var document = new CharacterMakerDocument
             {
-                version = 14,
+                version = 15,
                 targetId = nowCharacterData.id,
+                isNewCharacter = string.IsNullOrWhiteSpace(nowCharacterData.id),
+                templateId = nowCharacterData.TemplateId, newCharacterKey = nowCharacterData.newCharacterKey,
+                freeSoulInShop = nowCharacterData.freeSoulInShop,
                 identity = nowCharacterData.identity?.Clone(),
                 voiceCharacterId = nowCharacterData.voiceCharacterId, voiceAvatarCode = nowCharacterData.voiceAvatarCode,
                 voiceName = nowCharacterData.voiceName, voicePortraitPng = nowCharacterData.voicePortraitPng,
@@ -62,7 +65,7 @@ public partial class CharacterManager : MonoBehaviour
             try
             {
                 if (iconController != null) iconController.SaveUploadedPortrait(document);
-                document.portraitG4txBase64 = Convert.ToBase64String(BuildCharacterPortrait(nowCharacterData.id));
+                document.portraitG4txBase64 = Convert.ToBase64String(BuildCharacterPortrait(nowCharacterData.TemplateId));
             }
             catch (Exception portraitException)
             {
@@ -88,7 +91,7 @@ public partial class CharacterManager : MonoBehaviour
             CharacterMakerDocument document = CharacterMakerDocument.Read(paths[0]);
 
             var warnings = new List<string>();
-            RestoreSavedModel(0, document.targetId, warnings);
+            RestoreSavedModel(0, document.TemplateId, warnings);
             if (avatarSetting != null)
             {
                 try { avatarSetting.RestoreState(document.avatarCode, document.avatarInput); }
@@ -107,6 +110,12 @@ public partial class CharacterManager : MonoBehaviour
             RestoreSavedTextures(document.textures, warnings);
             try { voiceController.RestoreVoice(document); } catch (Exception exception) { warnings.Add("語音設定：" + exception.Message); }
             try { if (iconController != null) iconController.RestoreUploadedPortrait(document); } catch (Exception exception) { warnings.Add("Icon: " + exception.Message); }
+            nowCharacterData.freeSoulInShop = document.freeSoulInShop;
+            if (document.IsNew) {
+                infoPage.OnClickNew();
+                nowCharacterData.newCharacterKey = document.newCharacterKey;
+            }
+            infoPage.RefreshNewControls();
             selectionController.ResetSelectionTarget();
 
             RefreshAllTransformInputs();

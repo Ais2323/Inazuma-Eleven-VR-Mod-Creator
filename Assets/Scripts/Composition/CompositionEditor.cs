@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -266,8 +266,9 @@ namespace G4Composition
         {
             if (exporting != null) { exporting.Cancel(); Status("正在取消匯出…"); return; }
             if (target == null || Document.Parts.Count == 0) { Status("請先加入部件並選擇目標角色。"); return; }
-            string[] folders = SFB.StandaloneFileBrowser.OpenFolderPanel("選擇匯出位置（來源 Dump 不可寫入）", "", false);
+            string[] folders = SFB.StandaloneFileBrowser.OpenFolderPanel("選擇匯出位置（來源 Dump 不可寫入）", SettingManager.GetExportDirectory("compositionExportDirectory"), false);
             if (folders == null || folders.Length == 0 || string.IsNullOrEmpty(folders[0])) return;
+            SettingManager.RememberExportDirectory("compositionExportDirectory", folders[0]);
             exporting = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             try
             {
@@ -281,7 +282,8 @@ namespace G4Composition
         }
         void SaveDocument()
         {
-            string[] folder = SFB.StandaloneFileBrowser.OpenFolderPanel("選擇拼貼文件輸出資料夾", "", false); if (folder == null || folder.Length == 0) return;
+            string[] folder = SFB.StandaloneFileBrowser.OpenFolderPanel("選擇拼貼文件輸出資料夾", SettingManager.GetExportDirectory("compositionDocumentExportDirectory"), false); if (folder == null || folder.Length == 0) return;
+            SettingManager.RememberExportDirectory("compositionDocumentExportDirectory", folder[0]);
             try
             {
                 ExportPathGuard.Validate(folder[0], DumpDataManager.CommonPath, DumpDataManager.Dx11Path);

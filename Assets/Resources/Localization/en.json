@@ -70,5 +70,15 @@
     "SkillsMain": "Main",
     "SkillsAlternate": "Alternate",
     "CharSkillMain": "Main",
-    "CharSkillSub": "Sub"
+    "CharSkillSub": "Sub",
+    "CharBuildType": "Common drop build type",
+    "CharBuildType0": "Breach",
+    "CharBuildType1": "Counter",
+    "CharBuildType2": "Bond",
+    "CharBuildType3": "Tension",
+    "CharBuildType4": "Rough Play",
+    "CharBuildType5": "Justice",
+    "CharBuildType6": "Freedom",
+    "ModName": "Mod name",
+    "ModNamePlaceholder": "Enter mod name"
 }

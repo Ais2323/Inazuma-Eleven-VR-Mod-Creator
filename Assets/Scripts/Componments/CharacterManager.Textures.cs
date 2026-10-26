@@ -45,8 +45,9 @@ public partial class CharacterManager : MonoBehaviour
             return;
         }
 
-        string[] folders = StandaloneFileBrowser.OpenFolderPanel("選擇貼圖與 UV 輸出資料夾", "", false);
+        string[] folders = StandaloneFileBrowser.OpenFolderPanel("選擇貼圖與 UV 輸出資料夾", SettingManager.GetExportDirectory("textureExportDirectory"), false);
         if (folders == null || folders.Length == 0 || string.IsNullOrEmpty(folders[0])) return;
+        SettingManager.RememberExportDirectory("textureExportDirectory", folders[0]);
 
         try
         {

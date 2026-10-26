@@ -36,6 +36,32 @@ public static class SettingManager
         if (!_setting.TryGetValue("language", out var language) || string.IsNullOrWhiteSpace(language)) _setting["language"] = "en";
     }
 
+    // Export dialogs have their own persisted directories, independent of file-open history.
+    public static string GetExportDirectory(string key)
+    {
+        if (Settings.TryGetValue(key, out string directory) && !string.IsNullOrWhiteSpace(directory))
+        {
+            try
+            {
+                directory = Path.GetFullPath(directory);
+                while (!string.IsNullOrEmpty(directory))
+                {
+                    if (Directory.Exists(directory)) return directory;
+                    directory = Path.GetDirectoryName(directory);
+                }
+            }
+            catch (System.Exception e) when (e is System.ArgumentException || e is System.NotSupportedException || e is IOException || e is System.UnauthorizedAccessException) { }
+        }
+        string fallback = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
+        return Directory.Exists(fallback) ? fallback : Application.persistentDataPath;
+    }
+
+    public static void RememberExportDirectory(string key, string directory)
+    {
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+            UpdateInfo(key, Path.GetFullPath(directory));
+    }
+
     public static void UpdateInfo(string type, string value)
     {
         if (_setting == null) Init();

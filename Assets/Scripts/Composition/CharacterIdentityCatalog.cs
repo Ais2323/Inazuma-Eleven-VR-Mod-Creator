@@ -155,18 +155,29 @@ namespace G4Composition
             return model.UInt(36);
         }
 
-        // VictoryTool's default uniform family is u110101; resolve the native IDs rather than hardcoding CRCs.
+        // Generic IE/GO unaffiliated teams reference uniform_config nameId 2961452819.
+        // Their character model rows often carry Raimon as a fallback, not their actual kit.
         internal uint[] Equipment(uint teamId, uint seriesId, int gender, bool keeper)
         {
             // Uniform type selects the team kit, independently of character gender.
             int type = 0, selected = -1;
             if (teamId == 0)
             {
-                var parts = Read(Find(directory, "chara_parts_"));
-                const string family = "u110101_10";
-                uint uniform = parts.Rows.First(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.Text(1) == family).UInt(0);
-                for (int i = 0; i < uniformModels.Count; i++)
-                    if (uniforms.U32(uniformModels.Row(i)) == uniform) { selected = uniformModels.Row(i); break; }
+                const uint unaffiliatedKit = 2961452819;
+                for (int i = 0; i < uniformList.Count; i++)
+                {
+                    int row = uniformList.Row(i);
+                    if (uniforms.U32(row) != unaffiliatedKit) continue;
+                    uint tuple = uniforms.U32(row + 4);
+                    int start = (int)(tuple & 0xffff), count = (int)(tuple >> 16);
+                    for (int j = 0; j < count; j++)
+                    {
+                        int candidate = uniformModels.Row(start + j);
+                        if (selected < 0) selected = candidate;
+                        if (uniforms.Byte(candidate + 92) == type) { selected = candidate; break; }
+                    }
+                    break;
+                }
             }
             else
             {

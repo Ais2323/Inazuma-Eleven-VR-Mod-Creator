@@ -11,7 +11,10 @@ namespace G4Composition
         readonly CfgTable bases;
         readonly Dictionary<string, CfgTable> tables = new(StringComparer.OrdinalIgnoreCase);
         readonly HashSet<string> dirty = new(StringComparer.OrdinalIgnoreCase);
-        internal CharacterIdentityWriter(CfgTable bases) { this.bases = bases; }
+        internal CharacterIdentityWriter(CfgTable bases, IEnumerable<CfgTable> initialTables = null) {
+            this.bases = bases;
+            if (initialTables != null) foreach (var table in initialTables) tables[table.Source] = table;
+        }
         CfgTable Table(string path)
         {
             if (!tables.TryGetValue(path, out var table)) tables[path] = table = CharacterIdentityCatalog.Read(path);
@@ -74,6 +77,12 @@ namespace G4Composition
                     throw new InvalidDataException(targetId + ": invalid technique slots.");
                 var row = table.Rows.SingleOrDefault(r => r.Name == "CHARA_PARAM_INFO" && r.UInt(0) == variant.parameterId && r.UInt(1) == baseId)
                     ?? throw new InvalidDataException(targetId + ": technique variant belongs to another character.");
+                // Native CHARA_PARAM_INFO[5] controls the common soul-drop build tendency.
+                if (variant.hasBuildType && variant.buildType != variant.originalBuildType) {
+                    if (variant.buildType < 0 || variant.buildType > 6)
+                        throw new InvalidDataException(targetId + ": invalid build type.");
+                    Set(row, 5, variant.buildType); dirty.Add(path);
+                }
                 for (int i = 0; i < 9; i++) {
                     bool skillChanged = variant.skills[i] != variant.originalSkills[i], levelChanged = variant.levels[i] != variant.originalLevels[i];
                     if (!skillChanged && !levelChanged) continue;
