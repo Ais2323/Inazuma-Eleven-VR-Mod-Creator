@@ -73,10 +73,26 @@ namespace G4Composition
         }
         static CfgTable.Row Single(CfgTable table, string type, uint id) => table.Rows.Single(r => r.Name == type && r.UInt(0) == id);
         static void Set(CfgTable.Row row, int index, long value) { if (row.Types[index] != 1) throw new InvalidDataException(row.Name + ": expected integer field " + index); row.Values[index] = value; }
+        internal static CfgTable.Row CloneBattleReference(CfgTable bases, CfgTable.Row reference)
+        {
+            if (reference.Name != "CHARA_BASE_INFO_REF_BATTLE" || reference.Values.Length != 2)
+                throw new InvalidDataException("Invalid battle-reference companion.");
+            var companion = reference.Clone();
+            long start = companion.Int(0), count = companion.Int(1);
+            if (count == 0) return companion;
+            var battles = bases.Rows.Where(r => r.Name == "CHARA_BASE_BATTLE").ToArray();
+            if (count < 0 || start < 0 || start > battles.LongLength - count)
+                throw new InvalidDataException("Invalid battle reference range.");
+            var copies = battles.Skip(checked((int)start)).Take(checked((int)count)).Select(r => r.Clone()).ToArray();
+            bases.Insert("CHARA_BASE_BATTLE_LIST_BEG", "CHARA_BASE_BATTLE_LIST_END", copies);
+            Set(companion, 0, battles.Length);
+            return companion;
+        }
+
         public static string StableInternalName(string key)
         {
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidDataException("Missing persistent new character key.");
-            return "c" + (90000000 + G4TextureParser.Crc32(key) % 9000000).ToString("D8");
+            return "c" + (90000000 + G4TextureParser.Crc32Utf8(key) % 9000000).ToString("D8");
         }
         public Result Build(CharacterCatalog catalog, ExportRequest request, string dx11, CancellationToken token)
         {
@@ -117,13 +133,7 @@ namespace G4Composition
             if (clone.Int(21) != 0) Set(clone, 21, catalog.Base.Rows.Where(r => r.Name == "CHARA_BASE_INFO").Max(r => r.Int(21)) + 1);
             int sourceIndex = catalog.Base.Rows.IndexOf(source);
             if (catalog.Base.Rows[sourceIndex + 1].Name != "CHARA_BASE_INFO_REF_BATTLE") throw new InvalidDataException("Missing base battle-reference companion.");
-            var companion = catalog.Base.Rows[sourceIndex + 1].Clone();
-            if (companion.Int(0) != 0)
-            {
-                var battles = catalog.Base.Rows.Where(r => r.Name == "CHARA_BASE_BATTLE").ToArray(); int battle = checked((int)companion.Int(0));
-                if (battle < 0 || battle >= battles.Length) throw new InvalidDataException("Invalid battle reference.");
-                catalog.Base.Insert("CHARA_BASE_BATTLE_LIST_BEG", "CHARA_BASE_BATTLE_LIST_END", battles[battle].Clone()); Set(companion, 0, battles.Length);
-            }
+            var companion = CloneBattleReference(catalog.Base, catalog.Base.Rows[sourceIndex + 1]);
             catalog.Base.Insert("CHARA_BASE_INFO_LIST_BEG", "CHARA_BASE_INFO_LIST_END", clone, companion);
             var parameterClone = parameter.Clone(); Set(parameterClone, 0, allocated[1]); Set(parameterClone, 1, allocated[0]);
             Set(parameterClone, 2, settings.Affinity); Set(parameterClone, 3, settings.MainPosition); Set(parameterClone, 4, settings.SubPosition);

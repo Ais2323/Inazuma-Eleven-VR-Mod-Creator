@@ -140,10 +140,13 @@ namespace G4Runtime
             }
             return null;
         }
-        public static uint Crc32(string value)
+        // Native resource names retain their original ASCII hashing contract.
+        public static uint Crc32(string value) => Crc32Bytes(Encoding.ASCII.GetBytes(value));
+        public static uint Crc32Utf8(string value) => Crc32Bytes(Encoding.UTF8.GetBytes(value));
+        static uint Crc32Bytes(byte[] bytes)
         {
             uint crc = 0xFFFFFFFF;
-            foreach (byte b in Encoding.ASCII.GetBytes(value))
+            foreach (byte b in bytes)
             {
                 crc ^= b;
                 for (int j = 0; j < 8; j++) crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xEDB88320u : 0);

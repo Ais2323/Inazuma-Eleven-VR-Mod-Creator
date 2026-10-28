@@ -35,8 +35,11 @@ namespace G4Composition
         }
         static CfgTable Read(byte[] bytes)
         {
-            byte[] plain=Plain(bytes)?bytes:Crypt(bytes,false);
-            if(!Plain(plain))throw new InvalidDataException("Unsupported CPK registry.");
+            const string registryHelp = "Cannot decrypt or read the selected CPK registry. Use data/cpk_list.cfg.bin from the currently installed game version; an old registry or another .cfg.bin file is not compatible.";
+            byte[] plain;
+            try { plain=Plain(bytes)?bytes:Crypt(bytes,false); }
+            catch (CryptographicException e) { throw new InvalidDataException(registryHelp, e); }
+            if(!Plain(plain))throw new InvalidDataException(registryHelp);
             // Stock Viola can omit the padding before the string block; normalize only that layout.
             int strings=BitConverter.ToInt32(plain,4),length=BitConverter.ToInt32(plain,8);
             if(strings<16||length<0||(long)strings+length>plain.Length-16)throw new InvalidDataException("Invalid CPK string bounds.");
