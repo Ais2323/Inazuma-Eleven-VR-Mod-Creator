@@ -7,16 +7,33 @@ public static class LocalizationManager
 {
     public static string NowLoc { get => _nowLoc; }
 
-#if UNITY_EDITOR
-    public static string LocalizationPath = Path.Combine(Application.dataPath, "Localization");
-#else
-    public static string LocalizationPath = Path.Combine(Application.persistentDataPath, "Localization");
-#endif
+    public static string LocalizationPath = Path.Combine(SettingManager.DataDirectory, "Localization");
     private static string _nowLoc = SettingManager.Settings["language"];
 
     private static List<BaseUIController> allUIComponment = new List<BaseUIController>();
 
     private static Dictionary<string, string> locTexts = null;
+
+    static LocalizationManager()
+    {
+#if !UNITY_EDITOR
+        // Also materialize bundled languages when only the player files were copied,
+        // or when a user adds a missing language after the build was produced.
+        try
+        {
+            Directory.CreateDirectory(LocalizationPath);
+            foreach (var asset in Resources.LoadAll<TextAsset>("Localization"))
+            {
+                string target = Path.Combine(LocalizationPath, asset.name + ".json");
+                if (!File.Exists(target)) File.WriteAllText(target, asset.text);
+            }
+        }
+        catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException)
+        {
+            Debug.LogWarning("Cannot create localization files: " + e.Message);
+        }
+#endif
+    }
 
     public static void UpdateLoc(string nowLoc)
     {
@@ -27,7 +44,7 @@ public static class LocalizationManager
         string path = Path.Combine(LocalizationPath, $"{_nowLoc}.json");
         string json = null;
         try { if (File.Exists(path)) json = File.ReadAllText(path); }
-        catch (IOException e) { Debug.LogWarning(e.Message); }
+        catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException) { Debug.LogWarning(e.Message); }
         if (json == null)
         {
             var asset = Resources.Load<TextAsset>("Localization/" + _nowLoc) ?? Resources.Load<TextAsset>("Localization/en");

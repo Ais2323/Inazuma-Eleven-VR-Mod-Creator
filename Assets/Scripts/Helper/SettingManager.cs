@@ -5,11 +5,20 @@ using UnityEngine;
 
 public static class SettingManager
 {
-    #if UNITY_EDITOR
-        public static string SettingPath = Path.Combine(Application.dataPath, "setting.json");
-    #else
-        public static string SettingPath = Path.Combine(Application.persistentDataPath, "setting.json");
-    #endif
+    public static string DataDirectory
+    {
+        get
+        {
+#if UNITY_EDITOR
+            return Application.dataPath;
+#elif UNITY_STANDALONE_OSX
+            return Path.GetDirectoryName(Path.GetDirectoryName(Application.dataPath));
+#else
+            return Path.GetDirectoryName(Application.dataPath) ?? Application.dataPath;
+#endif
+        }
+    }
+    public static string SettingPath = Path.Combine(DataDirectory, "setting.json");
 
     public static Dictionary<string, string> Settings {
         get
@@ -23,6 +32,7 @@ public static class SettingManager
     private static void Init()
     {
         _setting = new Dictionary<string, string>();
+        bool createPortableSettings = !File.Exists(SettingPath);
         try
         {
             if (File.Exists(SettingPath))
@@ -34,6 +44,7 @@ public static class SettingManager
         }
         if (!_setting.TryGetValue("path", out var path) || path == null) _setting["path"] = "";
         if (!_setting.TryGetValue("language", out var language) || string.IsNullOrWhiteSpace(language)) _setting["language"] = "en";
+        if (createPortableSettings) SaveSettings();
     }
 
     // Export dialogs have their own persisted directories, independent of file-open history.
@@ -53,7 +64,7 @@ public static class SettingManager
             catch (System.Exception e) when (e is System.ArgumentException || e is System.NotSupportedException || e is IOException || e is System.UnauthorizedAccessException) { }
         }
         string fallback = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
-        return Directory.Exists(fallback) ? fallback : Application.persistentDataPath;
+        return Directory.Exists(fallback) ? fallback : DataDirectory;
     }
 
     public static void RememberExportDirectory(string key, string directory)
@@ -72,6 +83,11 @@ public static class SettingManager
         }
         else _setting.Add(type, value);
         
+        SaveSettings();
+    }
+
+    private static void SaveSettings()
+    {
         string json = JsonConvert.SerializeObject(_setting);
         try
         {
