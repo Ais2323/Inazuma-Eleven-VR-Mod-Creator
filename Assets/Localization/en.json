@@ -87,5 +87,15 @@
     "CharBuildType5": "Justice",
     "CharBuildType6": "Freedom",
     "ModName": "Mod name",
-    "ModNamePlaceholder": "Enter mod name"
+    "ModNamePlaceholder": "Enter mod name",
+    "searchPlaceholder": "search...",
+    "ExistCharacter": "Exist Character",
+    "BindNewCharacter": "New Character",
+    "SkillBind": "Bind skill",
+    "SkillInvalidCharacter": "The selected file has no valid character identifier.",
+    "SkillMissingExportCharacter": "The transformation character must be included once in the same Mod export",
+    "SkillMiximax": "Miximax",
+    "SkillModeChange": "Mode change",
+    "ModeNameTitle": "Mode Name",
+    "EnterName": "Enter name..."
 }

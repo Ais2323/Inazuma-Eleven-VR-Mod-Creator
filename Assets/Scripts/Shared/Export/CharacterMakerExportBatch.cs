@@ -38,6 +38,7 @@ public static class CharacterMakerExportBatch
                 throw new InvalidDataException("替換目標為空或重複：" + doc.targetId);
         }
         if (docs.Length == 0) throw new InvalidDataException("沒有要匯出的角色。");
+        CharacterSkillTransformationExporter.ValidateReferences(docs);
         destination = Path.GetFullPath(destination);
         var catalog = CharacterCatalog.Read(DumpDataManager.CommonPath, CancellationToken.None);
         // Retain previously exported characters and unrelated settings already in this data folder.
@@ -104,6 +105,7 @@ public static class CharacterMakerExportBatch
         try {
             Directory.CreateDirectory(stage);
             CharacterMakerBatchExporter.WriteMergedCharacterSettings(settings, stage, catalog);
+            CharacterSkillTransformationExporter.Write(docs, settings, catalog, stage, destination, modNamespace);
             foreach (var built in geometry) CharacterMakerBatchExporter.Write(built, stage);
             foreach (var table in Tables(catalog)) {
                 byte[] bytes = table.Write(); CfgTable.Read(bytes, "batch settings validation");

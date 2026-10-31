@@ -87,5 +87,15 @@
     "CharBuildType5": "正義",
     "CharBuildType6": "自由",
     "ModName": "模組名稱",
-    "ModNamePlaceholder": "請輸入模組名稱"
+    "ModNamePlaceholder": "請輸入模組名稱",
+    "searchPlaceholder": "搜尋...",
+    "ExistCharacter": "存在角色",
+    "BindNewCharacter": "新角色",
+    "SkillBind": "綁定技能",
+    "SkillInvalidCharacter": "選擇的存檔缺少有效的角色識別碼。",
+    "SkillMissingExportCharacter": "變身角色必須一併加入同一個 Mod 匯出，且只能出現一次",
+    "SkillMiximax": "極限合體",
+    "SkillModeChange": "模式變化",
+    "ModeNameTitle": "模式變化名稱",
+    "EnterName": "輸入名稱..."
 }
