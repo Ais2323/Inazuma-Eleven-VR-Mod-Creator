@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.IO;
 using System.Linq;
@@ -11,25 +11,6 @@ using G4Runtime;
 [InitializeOnLoad]
 public static class G4HeadValidation
 {
-    static G4HeadValidation()
-    {
-        EditorApplication.playModeStateChanged += state =>
-        {
-            if (state != PlayModeStateChange.EnteredEditMode || !SessionState.GetBool("G4SmokeRunning", false)) return;
-            SessionState.SetBool("G4SmokeRunning", false);
-            string[] args = Environment.GetCommandLineArgs(); int flag = Array.IndexOf(args, "--g4-smoke");
-            if (flag < 0) flag = Array.IndexOf(args, "--g4-composition-smoke");
-            string result = flag >= 0 ? Path.Combine(args[flag + 1], "smoke-result.txt") : "";
-            bool passed = File.Exists(result) && File.ReadAllText(result).StartsWith("PASS:", StringComparison.Ordinal);
-            if (Application.isBatchMode) EditorApplication.Exit(passed ? 0 : 1);
-        };
-    }
-    public static void PlayModeSmoke()
-    {
-        SessionState.SetBool("G4SmokeRunning", true);
-        UnityEditor.SceneManagement.EditorSceneManager.OpenScene("Assets/Scenes/CharacterPreviewDemo.unity");
-        EditorApplication.EnterPlaymode();
-    }
     [MenuItem("Tools/G4/Validate sample heads")]
     public static async void ValidateSamples()
     {
@@ -118,19 +99,6 @@ public static class G4HeadValidation
     {
         try { action(); } catch (InvalidDataException) { return; }
         throw new Exception(name + " was incorrectly accepted.");
-    }
-    public static void BuildWindows()
-    {
-        string output = Environment.GetEnvironmentVariable("G4_BUILD_OUTPUT");
-        if (string.IsNullOrWhiteSpace(output)) output = "Builds/HeadDemo/HeadDemo.exe";
-        var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
-        {
-            scenes = new[] { "Assets/Scenes/StartScene.unity", "Assets/Scenes/CharacterPreviewDemo.unity" },
-            target = BuildTarget.StandaloneWindows64,
-            locationPathName = output,
-            options = BuildOptions.Development
-        });
-        if (report.summary.result != BuildResult.Succeeded) throw new Exception("Windows build failed: " + report.summary.result);
     }
 }
 #endif

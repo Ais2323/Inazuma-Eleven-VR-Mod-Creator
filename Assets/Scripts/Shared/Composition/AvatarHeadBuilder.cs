@@ -540,7 +540,7 @@ namespace G4Composition
                     if (Application.isPlaying) Destroy(orphan.gameObject);
                     else DestroyImmediate(orphan.gameObject);
                 }
-                Debug.LogWarning($"AvatarDemo failed to load {model}: {exception}");
+                Debug.LogWarning($"AvatarHeadBuilder failed to load {model}: {exception}");
                 return null;
             }
         }
@@ -966,7 +966,7 @@ namespace G4Composition
             }
             catch (Exception exception)
             {
-                Debug.LogWarning($"AvatarDemo failed to load facial texture {name}: {exception.Message}");
+                Debug.LogWarning($"AvatarHeadBuilder failed to load facial texture {name}: {exception.Message}");
             }
         }
 
