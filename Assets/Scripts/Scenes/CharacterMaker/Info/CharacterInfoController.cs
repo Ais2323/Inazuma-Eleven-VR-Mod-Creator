@@ -45,7 +45,7 @@ public partial class CharacterInfoController : MonoBehaviour
         ApplySkinColorToBodyPreviews(color);
     }
 
-    void OnDestroy() => ClearBodyPreviews();
+    void OnDestroy() { CancelIdentityTranslation(); ClearBodyPreviews(); }
     public Transform bodyParent;
 
     public Transform bodyTypeParent;

@@ -87,5 +87,7 @@
     "SkillMiximax": "極限合體",
     "SkillModeChange": "模式變化",
     "ModeNameTitle": "模式變化名稱",
-    "EnterName": "輸入名稱..."
+    "EnterName": "輸入名稱...",
+    "AutoTranslate": "自動翻譯",
+    "AutoTranslateFailed": "翻譯失敗"
 }

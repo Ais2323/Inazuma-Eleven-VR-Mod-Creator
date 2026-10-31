@@ -25,6 +25,7 @@ public partial class CharacterInfoController
 
     void InitializeDetails(bool dumpReady)
     {
+        InitializeTranslation();
         detailLocale = AppLocale();
         if (localeButtonsParent != null)
             foreach (Transform child in localeButtonsParent)
@@ -79,6 +80,7 @@ public partial class CharacterInfoController
     }
     internal void LoadIdentityForCharacter(string id)
     {
+        CancelIdentityTranslation();
         nowCharacterData.identity = null;
         try
         {
@@ -91,6 +93,7 @@ public partial class CharacterInfoController
     }
     internal void RestoreIdentity(CharacterIdentitySettings saved)
     {
+        CancelIdentityTranslation();
         if (saved != null && string.Equals(saved.sourceId, nowCharacterData.TemplateId, StringComparison.OrdinalIgnoreCase))
         {
             nowCharacterData.identity = saved.Clone();
@@ -138,7 +141,7 @@ public partial class CharacterInfoController
         foreach (Button button in localeButtons)
         {
             string locale = LocaleNames.TryGetValue(button.name, out var mapped) ? mapped : button.name;
-            button.interactable = Identity != null && locale != detailLocale;
+            button.interactable = Identity != null && identityTranslation == null && locale != detailLocale;
         }
         foreach (var pair in detailButtons)
         {
@@ -162,10 +165,11 @@ public partial class CharacterInfoController
             int index = Identity == null || identityCatalog == null ? 0 : identityCatalog.Teams.FindIndex(t => t.Id == Identity.team);
             teamDropdown.SetValueWithoutNotify(Math.Max(0, index)); teamDropdown.RefreshShownValue();
         }
+        if (autoTranslateButton != null) autoTranslateButton.interactable = Identity != null && identityTranslation == null;
     }
     void SetInput(InputField input, string value)
     {
         if (input == null) return;
-        input.interactable = Identity != null; input.SetTextWithoutNotify(value ?? "");
+        input.interactable = Identity != null && identityTranslation == null; input.SetTextWithoutNotify(value ?? "");
     }
 }

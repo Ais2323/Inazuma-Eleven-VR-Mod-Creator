@@ -97,5 +97,7 @@
     "SkillMiximax": "Miximax",
     "SkillModeChange": "Mode change",
     "ModeNameTitle": "Mode Name",
-    "EnterName": "Enter name..."
+    "EnterName": "Enter name...",
+    "AutoTranslate": "Auto Translate",
+    "AutoTranslateFailed": "Translation failed"
 }

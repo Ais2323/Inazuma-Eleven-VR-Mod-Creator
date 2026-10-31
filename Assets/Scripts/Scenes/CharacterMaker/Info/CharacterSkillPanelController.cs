@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using G4Composition;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,6 +17,8 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
     public GameObject modeNameParent;
     public InputField modeNameInput;
     public Transform modeLocaleButtonsParent;
+    public Button autoTranslateButton;
+    CancellationTokenSource modeTranslation;
     public Button previousPage, nextPage, existingSetting, newCharacterSetting, bindSkill, closeButton;
     public Sprite[] affinitySprites;
     readonly List<Button> categories = new(), items = new();
@@ -50,11 +53,14 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         pageInput.contentType = InputField.ContentType.IntegerNumber;
         pageInput.onEndEdit.AddListener(s => { if (int.TryParse(s, out int value)) page = value - 1; RefreshItems(); });
         existingSetting.onClick.AddListener(() => {
+            modeTranslation?.Cancel();
+            modeTranslation?.Cancel();
             // Existing settings are a constrained sub-picker; categories must not change its purpose.
             selection = Selection.Existing; categoryParent.gameObject.SetActive(false);
             selectItems.SetActive(true); specifyItem.SetActive(false); page = 0; searchInput.SetTextWithoutNotify(""); RefreshItems();
         });
         newCharacterSetting.onClick.AddListener(SelectCharacterFile);
+        autoTranslateButton.onClick.AddListener(OnClickAutoTranslate);
         foreach (Transform child in modeLocaleButtonsParent) {
             var button = child.GetComponent<Button>(); if (button == null) continue;
             string language = ModeLocale(child.name);
@@ -105,6 +111,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
     }
     void ShowCategory(int index)
     {
+        modeTranslation?.Cancel();
         category = index; selection = Selection.Skill; draft = null; page = 0;
         categoryParent.gameObject.SetActive(true); searchInput.SetTextWithoutNotify("");
         for (int i = 0; i < categories.Count; i++) categories[i].interactable = i != index;
@@ -125,8 +132,9 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
     void RefreshModeName()
     {
         modeNameParent.SetActive(category == 8);
-        modeNameInput.interactable = category == 8 && draft != null;
-        foreach (var button in modeLocaleButtons) button.interactable = category == 8 && ModeLocale(button.name) != modeLocale;
+        modeNameInput.interactable = category == 8 && draft != null && modeTranslation == null;
+        foreach (var button in modeLocaleButtons) button.interactable = category == 8 && modeTranslation == null && ModeLocale(button.name) != modeLocale;
+        autoTranslateButton.interactable = category == 8 && draft != null && modeTranslation == null;
         modeNameInput.SetTextWithoutNotify(category == 8 ? draft?.ModeNameForLocale(modeLocale) ?? "" : "");
     }
     static string ModeLocale(string value) => value == "jp" ? "ja" : value == "zhcn" ? "zh_hans" : value == "zhtw" ? "zh_hant" : value;
@@ -185,6 +193,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         string[] paths = SFB.StandaloneFileBrowser.OpenFilePanel(LocalizationManager.GetText("BindNewCharacter"), "",
             new[] { new SFB.ExtensionFilter("CharacterMaker", "charamaker") }, false);
         if (paths == null || paths.Length == 0) return;
+        modeTranslation?.Cancel();
         try {
             var doc = CharacterMakerDocument.Read(paths[0]);
             if (doc.IsNew && string.IsNullOrWhiteSpace(doc.newCharacterKey) || !doc.IsNew && string.IsNullOrWhiteSpace(doc.targetId))
@@ -221,7 +230,28 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         technique.skills[slot] = id; if (id != 0 && technique.levels[slot] < 1) technique.levels[slot] = 1;
         changed?.Invoke(); if (close) Close();
     }
-    public void Close() { draft = null; selection = Selection.Skill; gameObject.SetActive(false); }
-    void OnDisable() { draft = null; selection = Selection.Skill; }
+    public async void OnClickAutoTranslate()
+    {
+        if (category != 8 || draft == null || modeTranslation != null) return;
+        var target = draft; string source = modeLocale, text = modeNameInput.text;
+        if (string.IsNullOrWhiteSpace(text)) return;
+        var cancellation = modeTranslation = new CancellationTokenSource(); RefreshModeName();
+        try {
+            var result = await AutoTranslationService.TranslateAsync(new Dictionary<string, string> { { "name", text } }, source,
+                modeLocaleButtons.Select(b => ModeLocale(b.name)), cancellation.Token,
+                message => Debug.Log("[AutoTranslate][模式名稱] " + message));
+            if (this == null || cancellation.IsCancellationRequested || !ReferenceEquals(draft, target) || isCurrent?.Invoke() != true) { Debug.Log("[AutoTranslate][模式名稱] 已取消或切換設定，結果未套用。"); return; }
+            foreach (var localeResult in result) target.SetModeName(localeResult.Key, localeResult.Value["name"]);
+            Commit(target.auraId, target, false);
+            Debug.Log("[AutoTranslate][模式名稱] 已套用其他語系；來源語系保留。");
+        } catch (OperationCanceledException) { Debug.Log("[AutoTranslate][模式名稱] 已取消，未套用部分結果。"); }
+        catch (Exception e) { if (this != null) Debug.LogError(LocalizationManager.GetText("AutoTranslateFailed") + ": " + e.Message); }
+        finally {
+            if (ReferenceEquals(modeTranslation, cancellation)) modeTranslation = null;
+            cancellation.Dispose(); if (this != null) RefreshModeName();
+        }
+    }
+    public void Close() { modeTranslation?.Cancel(); draft = null; selection = Selection.Skill; gameObject.SetActive(false); }
+    void OnDisable() { modeTranslation?.Cancel(); draft = null; selection = Selection.Skill; }
     void Update() { if (isCurrent != null && !isCurrent() || UnityEngine.InputSystem.Keyboard.current?.escapeKey.wasPressedThisFrame == true) Close(); }
 }
