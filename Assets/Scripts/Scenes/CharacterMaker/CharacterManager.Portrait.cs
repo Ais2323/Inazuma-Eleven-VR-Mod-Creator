@@ -73,19 +73,16 @@ public partial class CharacterManager : MonoBehaviour
                 iconController.CaptureUploadedPortrait(target, capture);
                 return true;
             }
-            Vector3 position = originalPosition;
-            position.y = targetFaceAnchor.y + portraitCameraHeightOffset;
-            position.z = -1f;
-            charIconCamera.transform.position = position;
+            charIconCamera.farClipPlane = 1;
             charIconCamera.Render(); capture(target, true);
-            position.z = 0f;
-            charIconCamera.transform.position = position;
+            
+            charIconCamera.farClipPlane = 2;
             charIconCamera.Render(); capture(target, false);
             return true;
         }
         finally
         {
-            charIconCamera.transform.position = originalPosition;
+            charIconCamera.farClipPlane = 1;
             RenderTexture.active = previousActive;
         }
     }
