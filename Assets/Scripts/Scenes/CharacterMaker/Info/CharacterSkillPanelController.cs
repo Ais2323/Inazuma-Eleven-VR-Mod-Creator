@@ -29,6 +29,8 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
     CharacterSkillTransformation draft;
     Func<bool> isCurrent;
     Action changed;
+    Action<CharacterIdentityCatalog.SkillOption> voiceChosen;
+    List<CharacterIdentityCatalog.SkillOption> voiceChoices;
     string locale, modeLocale;
     int slot, category, page, bindCategory;
     enum Selection { Skill, Existing, Bind }
@@ -88,11 +90,23 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
     internal void Open(CharacterIdentityCatalog source, string locale, CharacterTechniqueSettings target, int index, Func<bool> current, Action onChanged)
     {
         if (source == null || target?.skills?.Length != 9 || index < 0 || index >= 9) return;
-        Initialize(); catalog = source; this.locale = locale; modeLocale = locale; choices = catalog.SkillOptions(locale); technique = target; slot = index;
+        Initialize(); voiceChosen = null; voiceChoices = null; catalog = source; this.locale = locale; modeLocale = locale; choices = catalog.SkillOptions(locale); technique = target; slot = index;
         isCurrent = current; changed = onChanged; gameObject.SetActive(true);
         int initial = choices.FirstOrDefault(c => c.Id == target.skills[index])?.Category ?? 0;
         // Opening the selector never changes a saved skill, including the single kizuna entry.
         ShowCategory(initial < 0 ? 0 : initial);
+    }
+
+    internal void OpenVoiceSelection(CharacterIdentityCatalog source, string locale, IEnumerable<CharacterIdentityCatalog.SkillOption> options,
+        Func<bool> current, Action<CharacterIdentityCatalog.SkillOption> selected)
+    {
+        Initialize(); modeTranslation?.Cancel(); catalog = source; this.locale = locale;
+        voiceChoices = options.ToList(); voiceChosen = selected; technique = null; draft = null;
+        isCurrent = current; changed = null; selection = Selection.Existing; page = 0;
+        gameObject.SetActive(true); transform.SetAsLastSibling();
+        categoryParent.gameObject.SetActive(false); specifyItem.SetActive(false); selectItems.SetActive(true);
+        modeNameParent.SetActive(false); bindSkill.gameObject.SetActive(false);
+        searchInput.SetTextWithoutNotify(""); RefreshItems();
     }
 
     void SelectCategory(int index)
@@ -141,7 +155,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
     void RefreshItems()
     {
         string search = searchInput.text.Trim();
-        IEnumerable<CharacterIdentityCatalog.SkillOption> values = choices.Where(c => c.Category == category);
+        IEnumerable<CharacterIdentityCatalog.SkillOption> values = voiceChosen != null ? voiceChoices : choices.Where(c => c.Category == category);
         if (selection == Selection.Bind) values = choices.Where(c => c.Category == bindCategory);
         // Hide development-only aura commands while keeping native playable variants.
         values = values.Where(c => c.Resource == null || !c.Resource.StartsWith("test_", StringComparison.Ordinal) && !c.Resource.StartsWith("pv8_", StringComparison.Ordinal));
@@ -155,7 +169,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
             int at = page * items.Count + i; var button = items[i]; bool valid = at < filtered.Count;
             button.gameObject.SetActive(valid); if (!valid) continue;
             var option = filtered[at]; button.GetComponentInChildren<Text>(true).text = option.Label;
-            button.interactable = selection == Selection.Bind || option.Id != technique.skills[slot] ||
+            button.interactable = voiceChosen != null || selection == Selection.Bind || option.Id != technique.skills[slot] ||
                 technique.transformations?.Any(t => t.slot == slot) == true;
             var image = button.transform.Find("Affinity")?.GetComponent<Image>();
             if (image != null) {
@@ -171,6 +185,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         int at = page * items.Count + index;
         if (filtered == null || at < 0 || at >= filtered.Count || isCurrent?.Invoke() != true) { Close(); return; }
         var option = filtered[at];
+        if (voiceChosen != null) { var callback = voiceChosen; Close(); callback(option); return; }
         if (selection == Selection.Bind) {
             if (category != 5 || draft == null || option.Category < 0 || option.Category > 3) return;
             draft.bindSkill = option.Id; Commit(draft.auraId, draft); return;
@@ -251,7 +266,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
             cancellation.Dispose(); if (this != null) RefreshModeName();
         }
     }
-    public void Close() { modeTranslation?.Cancel(); draft = null; selection = Selection.Skill; gameObject.SetActive(false); }
-    void OnDisable() { modeTranslation?.Cancel(); draft = null; selection = Selection.Skill; }
+    public void Close() { modeTranslation?.Cancel(); draft = null; voiceChosen = null; voiceChoices = null; selection = Selection.Skill; gameObject.SetActive(false); }
+    void OnDisable() { modeTranslation?.Cancel(); draft = null; voiceChosen = null; voiceChoices = null; selection = Selection.Skill; }
     void Update() { if (isCurrent != null && !isCurrent() || UnityEngine.InputSystem.Keyboard.current?.escapeKey.wasPressedThisFrame == true) Close(); }
 }

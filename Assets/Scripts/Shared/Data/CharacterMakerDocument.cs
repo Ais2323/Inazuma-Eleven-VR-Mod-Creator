@@ -15,6 +15,7 @@ public sealed class CharacterMakerDocument
     public string TemplateId => IsNew ? templateId : targetId;
     public CharacterIdentitySettings identity;
     public string voiceCharacterId, voiceAvatarCode, voiceName, voicePortraitPng;
+    public List<CharacterVoiceOverride> voiceOverrides = new();
     public string avatarCode;
     public string avatarInput;
     public CharacterMakerPart head = new();

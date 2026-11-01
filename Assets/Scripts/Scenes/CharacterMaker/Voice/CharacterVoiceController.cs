@@ -34,6 +34,7 @@ public partial class CharacterVoiceController : MonoBehaviour
 
     internal void SetVoiceSelection(string sourceId, string code, string voice, Texture2D portrait, string png)
     {
+        voiceSelectionRevision++;
         if (!string.IsNullOrWhiteSpace(sourceId)) ShowCharacterVoicePortrait(sourceId);
         else ClearVoiceModel();
         StopVoicePreview();
@@ -56,6 +57,8 @@ public partial class CharacterVoiceController : MonoBehaviour
         if (selectedVoicePortrait != null) CharacterManager.DestroyRuntimeObject(selectedVoicePortrait);
         selectedVoicePortrait = portrait;
         RefreshVoicePreviewButton();
+        RefreshVoiceFileLabels();
+        if (voicePanel != null && voicePanel.activeInHierarchy) RebuildVoiceSkillRows();
         manager.selectionController.Close();
     }
 
@@ -123,6 +126,8 @@ public partial class CharacterVoiceController : MonoBehaviour
 
     internal void RestoreVoice(CharacterMakerDocument document)
     {
+        nowCharacterData.voiceOverrides = document.voiceOverrides ?? new System.Collections.Generic.List<CharacterVoiceOverride>();
+        RefreshVoiceFileLabels();
         if (!string.IsNullOrWhiteSpace(document.voiceAvatarCode))
         {
             string voice = AvatarRecipeParser.ResolveVoiceName(AvatarRecipeParser.Parse(document.voiceAvatarCode));
@@ -142,6 +147,7 @@ public partial class CharacterVoiceController : MonoBehaviour
             if (!CharacterManager.IsSafeCharacterId(id)) throw new InvalidDataException("語音來源角色 ID 無效。");
             SetVoiceSelection(id, null, null, null, null);
         }
+        RebuildVoiceSkillRows();
     }
 
     void OnDestroy()

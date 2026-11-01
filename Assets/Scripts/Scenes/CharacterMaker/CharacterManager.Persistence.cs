@@ -33,6 +33,7 @@ public partial class CharacterManager : MonoBehaviour
                 identity = nowCharacterData.identity?.Clone(),
                 voiceCharacterId = nowCharacterData.voiceCharacterId, voiceAvatarCode = nowCharacterData.voiceAvatarCode,
                 voiceName = nowCharacterData.voiceName, voicePortraitPng = nowCharacterData.voicePortraitPng,
+                voiceOverrides = nowCharacterData.voiceOverrides,
                 avatarCode = avatarSetting != null ? avatarSetting.nowAvatarCode : null,
                 avatarInput = avatarSetting != null && avatarSetting.inputField != null ? avatarSetting.inputField.text : null,
                 head = MakeSavedPart(1, nowCharacterData.headId),

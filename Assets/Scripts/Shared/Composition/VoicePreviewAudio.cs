@@ -56,6 +56,12 @@ namespace G4Composition
             name.All(c => char.IsLetterOrDigit(c) || c == '_');
 
         public static Result Decode(string bank, int random, int previousWave, CancellationToken token)
+            => DecodeStream(bank, random, previousWave, null, token);
+
+        public static Result DecodeWave(string bank, int waveId, CancellationToken token)
+            => DecodeStream(bank, 0, -1, waveId, token);
+
+        static Result DecodeStream(string bank, int random, int previousWave, int? waveId, CancellationToken token)
         {
             byte[] encoded;
             int selectedId;
@@ -86,7 +92,9 @@ namespace G4Composition
                     waves.Add(new Wave { Start = start, Length = (int)length, Id = ids[i] });
                 }
                 if (waves.Count == 0) throw new InvalidDataException("此音庫沒有可播放的 HCA 語音。");
-                var choices = waves.Count > 1 ? waves.Where(w => w.Id != previousWave).ToList() : waves;
+                var choices = waveId.HasValue ? waves.Where(w => w.Id == waveId.Value).ToList() :
+                    waves.Count > 1 ? waves.Where(w => w.Id != previousWave).ToList() : waves;
+                if (choices.Count == 0) throw new InvalidDataException("ACB references an unavailable AWB wave: " + waveId);
                 var selected = choices[(int)((uint)random % (uint)choices.Count)];
                 selectedId = selected.Id;
                 stream.Position = selected.Start;

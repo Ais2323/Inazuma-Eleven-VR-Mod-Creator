@@ -13,6 +13,7 @@ public class CharacterData
     public string TemplateId => string.IsNullOrWhiteSpace(id) ? templateId : id;
     public CharacterIdentitySettings identity;
     public string voiceCharacterId, voiceAvatarCode, voiceName, voicePortraitPng;
+    public List<CharacterVoiceOverride> voiceOverrides = new();
     public string headId;
     public string headAvatarCode;
     public Transform[] head;

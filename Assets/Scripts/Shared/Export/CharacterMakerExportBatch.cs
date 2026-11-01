@@ -105,6 +105,7 @@ public static class CharacterMakerExportBatch
         try {
             Directory.CreateDirectory(stage);
             CharacterMakerBatchExporter.WriteMergedCharacterSettings(settings, stage, catalog);
+            bool customVoice = CharacterVoiceExporter.Write(settings, catalog, stage, destination, modNamespace);
             CharacterSkillTransformationExporter.Write(docs, settings, catalog, stage, destination, modNamespace);
             foreach (var built in geometry) CharacterMakerBatchExporter.Write(built, stage);
             foreach (var table in Tables(catalog)) {
@@ -112,7 +113,7 @@ public static class CharacterMakerExportBatch
                 string path = Path.Combine(stage, Relative(catalog, table.Source));
                 Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllBytes(path, bytes);
             }
-            if (catalog.Base.Rows.Any(r => r.Name == "CHARA_BASE_INFO" && r.Text(1).StartsWith("c9", StringComparison.Ordinal)))
+            if (customVoice || catalog.Base.Rows.Any(r => r.Name == "CHARA_BASE_INFO" && r.Text(1).StartsWith("c9", StringComparison.Ordinal)))
                 File.WriteAllBytes(Path.Combine(stage, "cpk_list.cfg.bin"), CharacterCpkRegistry.Build(CharacterCpkRegistry.FindSource(), destination, stage));
             foreach (string path in Directory.GetFiles(stage, "*", SearchOption.AllDirectories)) {
                 string output = Path.Combine(destination, path.Substring(stage.Length + 1));
