@@ -1,0 +1,190 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using G4Composition;
+using G4Runtime;
+
+public static partial class UniformMakerExporter
+{
+    public static void Export(IEnumerable<UniformMakerDocument> source, string output, string modName)
+    {
+        if (!DumpDataManager.ValidateSavedPath()) throw new InvalidDataException(DumpDataManager.LastError);
+        var docs = source.ToArray();
+        foreach (var doc in docs) doc.Validate();
+        if (docs.Where(d => !d.isNewUniform).GroupBy(d => d.targetUniformId).Any(g => g.Count() > 1) ||
+            docs.Where(d => d.isNewUniform).GroupBy(d => d.newUniformKey).Any(g => g.Count() > 1))
+            throw new InvalidDataException("More than one save targets the same uniform.");
+        output = Path.GetFullPath(output);
+        string character = Path.Combine(DumpDataManager.CommonPath, "gamedata", "character");
+        string nativeParts = CharacterIdentityCatalog.Find(character, "chara_parts_");
+        string nativeConfig = CharacterIdentityCatalog.Find(character, "uniform_config_");
+        string partsOutput = Path.Combine(output, "common", "gamedata", "character", Path.GetFileName(nativeParts));
+        string configOutput = Path.Combine(output, "common", "gamedata", "character", Path.GetFileName(nativeConfig));
+        var parts = CfgTable.Read(File.ReadAllBytes(File.Exists(partsOutput) ? partsOutput : nativeParts), nativeParts);
+        byte[] configBytes = File.ReadAllBytes(File.Exists(configOutput) ? configOutput : nativeConfig);
+        var newIds = PrepareInventory(docs, output, modName, ref configBytes);
+        var config = new AvatarRecipeParser.Rdbnp(configBytes, nativeConfig);
+        var uniformList = config.GetList("m_UniformInfoList"); var modelList = config.GetList("m_UniformModelInfoList");
+        var catalog = new UniformCatalog();
+        var nativeRows = CfgTable.Read(File.ReadAllBytes(nativeParts), nativeParts);
+        var occupied = new HashSet<uint>(parts.Rows.Where(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" || r.Name == "CHARA_PARTS_GLOVE_MODEL").Select(r => r.UInt(0)));
+        var converted = new Dictionary<UniformMakerTexture, byte[]>();
+        var pending = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        var replacementClothes = new Dictionary<uint, uint>();
+        foreach (var doc in docs)
+        {
+            uint templateId = doc.isNewUniform ? doc.templateUniformId : doc.targetUniformId;
+            uint targetId = doc.isNewUniform ? newIds[doc] : doc.targetUniformId;
+            var entry = catalog.Entries.SingleOrDefault(e => e.Id == templateId)
+                ?? throw new InvalidDataException("Unknown target uniform: " + doc.targetKey);
+            int info = Enumerable.Range(0, uniformList.Count).Select(uniformList.Row).Single(r => config.U32(r) == targetId);
+            uint span = config.U32(info + uniformList.Field("modelInfo"));
+            foreach (var variant in doc.variants.Where(v => v.HasChanges))
+            {
+                int model = Enumerable.Range((int)(span & 0xffff), (int)(span >> 16)).Select(modelList.Row)
+                    .Single(r => config.Byte(r + modelList.Field("typeId")) == variant.side);
+                string key = CharacterMakerExportBatch.NamespacedKey(modName, "uniform:" + targetId + ":" + variant.side + ":" + variant.role);
+                uint Allocate(string value)
+                {
+                    uint id = G4TextureParser.Crc32Utf8(value);
+                    if (id == 0 || !occupied.Add(id)) throw new InvalidDataException("Uniform resource ID collision: " + value);
+                    return id;
+                }
+                if (variant.clothesModelId != 0 || variant.armbandModelId != 0 || variant.textures.Any(t => t.part != UniformPartKind.Gloves))
+                {
+                    uint template = variant.clothesModelId != 0 ? variant.clothesModelId : entry.Models[variant.side, variant.role];
+                    var templateModel = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == template);
+                    string sourceName = templateModel.Text(1);
+                    var targetModel = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == entry.Models[variant.side, variant.role]);
+                    var targetInfo = Referenced(nativeRows, targetModel, "CHARA_PARTS_CLOTHES_INFO");
+                    string targetName = "um_" + Digest(key + ":clothes");
+                    uint mainId = 0;
+                    var madeStyles = new Dictionary<string, uint>();
+                    foreach (string suffix in new[] { "", "_slv", "_blyR" })
+                    {
+                        var sourceModel = nativeRows.Rows.FirstOrDefault(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.Text(1) == sourceName + suffix);
+                        if (sourceModel == null) continue;
+                        uint id = Allocate(targetName + suffix);
+                        if (suffix == "") mainId = id;
+                        madeStyles.Add(suffix, id);
+                        var sourceInfo = Referenced(nativeRows, sourceModel, "CHARA_PARTS_CLOTHES_INFO");
+                        var rows = sourceInfo.Select(r => r.Clone()).ToArray();
+                        for (int i = 0; i < rows.Length; i++)
+                        {
+                            var row = rows[i];
+                            string Read(int field) => sourceInfo[i].Text(field) ?? sourceInfo[0].Text(field);
+                            if (variant.armbandModelId != 0)
+                            {
+                                var arm = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == variant.armbandModelId);
+                                var arms = Referenced(nativeRows, arm, "CHARA_PARTS_CLOTHES_INFO");
+                                var body = catalog.BodyByAttribute((int)row.Int(2));
+                                var selectedArm = arms.FirstOrDefault(a => a.Int(2) == row.Int(2)) ?? arms.FirstOrDefault(a => a.Int(2) == body.Int(6)) ?? arms[0];
+                                Text(row, 8, selectedArm.Text(8) ?? arms[0].Text(8));
+                                Text(row, 9, selectedArm.Text(9) ?? arms[0].Text(9));
+                            }
+                            void Build(int modelField, int textureField, UniformPartKind kind, bool split)
+                            {
+                                string mesh = row.Text(modelField) ?? Read(modelField), texture = row.Text(textureField) ?? Read(textureField);
+                                if (string.IsNullOrWhiteSpace(mesh) || string.IsNullOrWhiteSpace(texture)) return;
+                                string ownerName = null;
+                                string modelName = null;
+                                if (modelField == 0)
+                                {
+                                    var targetRow = targetInfo.FirstOrDefault(r => r.Int(2) == row.Int(2)) ?? targetInfo[0];
+                                    ownerName = Path.GetFileName(targetRow.Text(1) ?? targetInfo[0].Text(1));
+                                    modelName = Path.GetFileName(targetRow.Text(0) ?? targetInfo[0].Text(0));
+                                }
+                                var paths = BuildResource(mesh, texture, kind, split, variant, key, converted, pending, ownerName, modelName);
+                                Text(row, modelField, paths[0]); Text(row, textureField, paths[1]);
+                                uint oldHash = G4TextureParser.Crc32(Path.GetFileNameWithoutExtension(texture));
+                                uint newHash = G4TextureParser.Crc32(Path.GetFileNameWithoutExtension(paths[1]));
+                                for (int field = 3; field < row.Values.Length; field++)
+                                    if (row.Types[field] == 1 && row.UInt(field) == oldHash) row.Values[field] = unchecked((long)(int)newHash);
+                            }
+                            Build(0, 1, UniformPartKind.Upper, true);
+                            // Skin references remain native; number/armband models carry their own material references.
+                            Build(3, 4, UniformPartKind.Number, false);
+                            Build(8, 9, UniformPartKind.Armband, false);
+                            Text(row, 6, Read(6)); Text(row, 7, Read(7));
+                        }
+                        Append(parts, sourceModel, id, targetName + suffix, "CHARA_PARTS_CLOTHES_INFO", rows);
+                    }
+                    if (mainId == 0) throw new InvalidDataException("Cannot resolve selected uniform model.");
+                    var variantMap = new Dictionary<uint, uint>();
+                    foreach (string suffix in new[] { "", "_slv", "_blyR" })
+                    {
+                        var original = nativeRows.Rows.FirstOrDefault(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.Text(1) == targetModel.Text(1) + suffix);
+                        if (original == null) continue;
+                        uint oldId = original.UInt(0), newId = madeStyles.TryGetValue(suffix, out uint style) ? style : mainId;
+                        variantMap[oldId] = newId;
+                        if (!doc.isNewUniform && replacementClothes.TryGetValue(oldId, out uint prior) && prior != newId)
+                            throw new InvalidDataException("Two edited uniform variants share the same native clothing ID.");
+                        if (!doc.isNewUniform) replacementClothes[oldId] = newId;
+                    }
+                    // Match play can choose specialized models directly from this table.
+                    foreach (int field in new[] { 0, 16, 24, 32, 40, 48, 56, 64 })
+                    {
+                        int offset = model + field + variant.role * 4;
+                        if (variantMap.TryGetValue(config.U32(offset), out uint replacement)) Put(configBytes, offset, replacement);
+                    }
+                }
+                if (variant.role == 1 && (variant.gloveModelId != 0 || variant.textures.Any(t => t.part == UniformPartKind.Gloves)))
+                {
+                    uint template = variant.gloveModelId != 0 ? variant.gloveModelId : entry.Gloves[variant.side];
+                    var glove = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_GLOVE_MODEL" && r.UInt(0) == template);
+                    var sourceInfo = Referenced(nativeRows, glove, "CHARA_PARTS_GLOVE_INFO");
+                    var rows = sourceInfo.Select(r => r.Clone()).ToArray();
+                    for (int i = 0; i < rows.Length; i++)
+                    {
+                        string mesh = sourceInfo[i].Text(0) ?? sourceInfo[0].Text(0), texture = sourceInfo[i].Text(1) ?? sourceInfo[0].Text(1);
+                        var paths = BuildResource(mesh, texture, UniformPartKind.Gloves, false, variant, key, converted, pending);
+                        Text(rows[i], 0, paths[0]); Text(rows[i], 1, paths[1]);
+                    }
+                    uint id = Allocate(key + ":gloves");
+                    Append(parts, glove, id, null, "CHARA_PARTS_GLOVE_INFO", rows);
+                    Put(configBytes, model + modelList.Field("gloveModelIdCrc"), id);
+                }
+            }
+        }
+        byte[] partBytes = parts.Write(); CfgTable.Read(partBytes, "Uniform export validation");
+        foreach (var file in pending)
+        {
+            string path = Path.Combine(output, file.Key); Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllBytes(path, file.Value);
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(partsOutput)); File.WriteAllBytes(partsOutput, partBytes); File.WriteAllBytes(configOutput, configBytes);
+        // Default appearances store clothing IDs directly, independently of match kits.
+        // Start from the character batch's table so mixed exports retain its changes.
+        string nativeModels = CharacterIdentityCatalog.Find(character, "chara_model_");
+        string modelOutput = Path.Combine(output, "common", "gamedata", "character", Path.GetFileName(nativeModels));
+        var characterModels = CfgTable.Read(File.ReadAllBytes(File.Exists(modelOutput) ? modelOutput : nativeModels), nativeModels);
+        bool changedModels = false;
+        foreach (var row in characterModels.Rows.Where(r => r.Name == "CHARA_MODEL_INFO"))
+            if (replacementClothes.TryGetValue(row.UInt(5), out uint replacement))
+            { row.Values[5] = unchecked((long)(int)replacement); changedModels = true; }
+        if (changedModels) File.WriteAllBytes(modelOutput, characterModels.Write());
+        string registry = Path.Combine(output, "cpk_list.cfg.bin");
+        File.WriteAllBytes(registry, CharacterCpkRegistry.Build(File.Exists(registry) ? registry : CharacterCpkRegistry.FindSource(), output, output));
+    }
+
+    static CfgTable.Row[] Referenced(CfgTable table, CfgTable.Row model, string infoName)
+    {
+        var reference = table.Rows[table.Rows.IndexOf(model) + 1];
+        if (reference.Name != model.Name + "_REF_INFO") throw new InvalidDataException("Missing model reference.");
+        return table.Rows.Where(r => r.Name == infoName).Skip((int)reference.Int(0)).Take((int)reference.Int(1)).ToArray();
+    }
+    static void Append(CfgTable table, CfgTable.Row template, uint id, string name, string infoName, CfgTable.Row[] rows)
+    {
+        var model = template.Clone(); model.Values[0] = unchecked((long)(int)id);
+        if (name != null) model.Values[1] = name;
+        int original = table.Rows.FindIndex(r => r.Name == template.Name && r.UInt(0) == template.UInt(0));
+        var reference = table.Rows[original + 1].Clone();
+        reference.Values[0] = (long)table.Rows.Count(r => r.Name == infoName); reference.Values[1] = (long)rows.Length;
+        table.Insert(infoName + "_LIST_BEG", infoName + "_LIST_END", rows);
+        table.Insert(model.Name + "_LIST_BEG", model.Name + "_LIST_END", model, reference);
+    }
+    static void Text(CfgTable.Row row, int field, string value) { if (value == null) return; row.Types[field] = 0; row.Values[field] = value; }
+    static void Put(byte[] bytes, int offset, uint value) => BitConverter.GetBytes(value).CopyTo(bytes, offset);
+    static string Digest(string key) => RawHeadAsset.Digest(Encoding.UTF8.GetBytes(key)).Substring(0, 20);
+}

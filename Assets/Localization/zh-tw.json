@@ -119,5 +119,17 @@
     "VoiceKeeperPass": "守門員拋球",
     "VoiceKeeperSuccess": "守門成功",
     "VoiceKeeperFail": "守門失敗",
-    "Add": "添加"
+    "Add": "添加",
+    "UniformMain": "主場",
+    "UniformSub": "客場",
+    "UniformNormal": "一般款",
+    "UniformGK": "守門員款",
+    "UniformNumber": "背號",
+    "UniformExportUpper": "輸出上衣貼圖與 UV",
+    "UniformExportLower": "輸出褲子貼圖與 UV",
+    "UniformExportNumber": "輸出背號貼圖與 UV",
+    "UniformExportArmband": "輸出臂章貼圖與 UV",
+    "UniformExportGloves": "輸出手套貼圖與 UV",
+    "UniformName": "隊服名稱",
+    "UniformFreeInShop": "在 BB 商店免費販售"
 }

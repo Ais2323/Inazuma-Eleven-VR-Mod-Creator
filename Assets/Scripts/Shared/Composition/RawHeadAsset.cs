@@ -124,7 +124,7 @@ namespace G4Composition
             byte[] output = (byte[])container.Clone(); Buffer.BlockCopy(expected, 0, output, indices, expected.Length);
             return output;
         }
-        public static byte[] Write(byte[] templateHeader, IReadOnlyList<RawTexture> textures)
+        public static byte[] Write(byte[] templateHeader, IReadOnlyList<RawTexture> textures, byte[] stringPrefix = null)
         {
             if (textures.Count == 0 || textures.Count > 255) throw new InvalidDataException("G4TX supports 1–255 textures in this writer.");
             using (var ms = new MemoryStream()) using (var w = new BinaryWriter(ms))
@@ -134,6 +134,7 @@ namespace G4Composition
                 foreach (int i in Enumerable.Range(0, textures.Count).OrderBy(i => G4TextureParser.Crc32(textures[i].Name))) w.Write(checked((byte)i));
                 Pad(w, 4); int names = (int)ms.Position; w.Write(new byte[textures.Count * 2]);
                 Pad(w, 4);
+                if (stringPrefix != null) w.Write(stringPrefix);
                 for (int i = 0; i < textures.Count; i++)
                 {
                     long p = ms.Position; ms.Position = names + i * 2; w.Write(checked((ushort)(p - names))); ms.Position = p;

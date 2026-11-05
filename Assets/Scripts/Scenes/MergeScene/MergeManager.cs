@@ -16,7 +16,7 @@ public class MergeManager : MonoBehaviour
     public void OnClickOpen()
     {
         string[] paths = StandaloneFileBrowser.OpenFilePanel(
-            "選擇 CharacterMaker 存檔", "", "charamaker", true);
+            "Select CharacterMaker / UniformMaker saves", "", new[] { new ExtensionFilter("Maker saves", "charamaker", "uniformmaker") }, true);
         if (paths == null || paths.Length == 0) return;
         var existing = new HashSet<string>(
             SelectBarContentParent.GetComponentsInChildren<SelectBarController>(true)
@@ -46,7 +46,7 @@ public class MergeManager : MonoBehaviour
     {
         string[] paths = SelectBarContentParent.GetComponentsInChildren<SelectBarController>(true)
             .Select(value => value.path).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
-        if (paths.Length == 0) { Debug.LogError("請先加入 .charamaker 存檔。"); return; }
+        if (paths.Length == 0) { Debug.LogError("Add .charamaker or .uniformmaker saves first."); return; }
         string modName = modNameInput != null ? modNameInput.text.Trim() : "";
         if (string.IsNullOrWhiteSpace(modName)) { Debug.LogError("請先輸入模組名稱。"); return; }
         string[] folders = StandaloneFileBrowser.OpenFolderPanel("選擇模組輸出位置", SettingManager.GetExportDirectory("modExportDirectory"), false);
@@ -54,15 +54,20 @@ public class MergeManager : MonoBehaviour
         SettingManager.RememberExportDirectory("modExportDirectory", folders[0]);
         try {
             var documents = new List<CharacterMakerDocument>();
+            var uniforms = new List<UniformMakerDocument>();
             foreach (string path in paths.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ThenBy(p => p, StringComparer.OrdinalIgnoreCase)) {
-                try { documents.Add(CharacterMakerDocument.Read(path)); }
+                try {
+                    if (Path.GetExtension(path).Equals(".uniformmaker", StringComparison.OrdinalIgnoreCase)) uniforms.Add(UniformMakerDocument.Read(path));
+                    else if (Path.GetExtension(path).Equals(".charamaker", StringComparison.OrdinalIgnoreCase)) documents.Add(CharacterMakerDocument.Read(path));
+                    else throw new InvalidDataException("Unsupported Maker save: " + path);
+                }
                 catch (Exception e) { throw new InvalidDataException(Path.GetFileName(path) + "：" + e.Message, e); }
             }
-            string modRoot = ExportMod(modName, folders[0], documents);
+            string modRoot = ExportMod(modName, folders[0], documents, uniforms);
             Debug.Log("模組匯出完成：" + modRoot + "\n每次匯出都是獨立版本，請只啟用同一批角色的一份模組。");
         } catch (Exception e) { Debug.LogError("合併匯出失敗：" + e.Message); }
     }
-    public static string ExportMod(string modName, string parent, IEnumerable<CharacterMakerDocument> documents)
+    public static string ExportMod(string modName, string parent, IEnumerable<CharacterMakerDocument> documents, IEnumerable<UniformMakerDocument> uniforms = null)
     {
         modName = (modName ?? "").Trim();
         if (string.IsNullOrWhiteSpace(modName)) throw new InvalidDataException("請輸入模組名稱。");
@@ -78,7 +83,13 @@ public class MergeManager : MonoBehaviour
             throw new InvalidDataException("Invalid mod output path.");
         Directory.CreateDirectory(stage);
         try {
-            var ids = CharacterMakerExportBatch.Export(documents, Path.Combine(stage, "data"), modName);
+            var characters = documents?.ToArray() ?? Array.Empty<CharacterMakerDocument>();
+            var kits = uniforms?.ToArray() ?? Array.Empty<UniformMakerDocument>();
+            if (characters.Length == 0 && kits.Length == 0) throw new InvalidDataException("No Maker documents selected.");
+            string data = Path.Combine(stage, "data");
+            Directory.CreateDirectory(data);
+            if (characters.Length > 0) CharacterMakerExportBatch.Export(characters, data, modName);
+            if (kits.Length > 0) UniformMakerExporter.Export(kits, data, modName);
             var metadata = new JObject { ["Name"] = modName, ["Author"] = "", ["ModVersion"] = "1.0", ["GameVersion"] = "", ["ModLink"] = "" };
             File.WriteAllText(Path.Combine(stage, "mod_data.json"), metadata.ToString());
             // A newly owned staging folder is moved into a checked sibling, never an existing mod.

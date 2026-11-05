@@ -119,5 +119,17 @@
     "VoiceKeeperPass": "Keeper Pass",
     "VoiceKeeperSuccess": "Keeper Success",
     "VoiceKeeperFail": "Keeper Fail",
-    "Add": "Add"
+    "Add": "Add",
+    "UniformMain": "Main",
+    "UniformSub": "Sub",
+    "UniformNormal": "Normal",
+    "UniformGK": "GoalKeeper",
+    "UniformNumber": "Number",
+    "UniformExportUpper": "Export upper textures and UV",
+    "UniformExportLower": "Export lower textures and UV",
+    "UniformExportNumber": "Export number textures and UV",
+    "UniformExportArmband": "Export armband textures and UV",
+    "UniformExportGloves": "Export glove textures and UV",
+    "UniformName": "Uniform name",
+    "UniformFreeInShop": "Available for free in the BB Shop"
 }

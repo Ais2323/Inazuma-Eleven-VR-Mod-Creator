@@ -53,7 +53,7 @@ public static class G4ModelLoader
         for (int i = 0; i < model.Materials.Count; i++)
         {
             var materialData = model.Materials[i];
-            var material = resources.Own(new Material(shader));
+            var material = resources.Own(new Material(shader) { name = materialData.Name });
             var textureData = G4TextureParser.Choose(materialData, textures);
             if (textureData == null && fallbackToFirstTexture)
                 textureData = textures.Find(value => G4TextureParser.IsBase(value.Name));

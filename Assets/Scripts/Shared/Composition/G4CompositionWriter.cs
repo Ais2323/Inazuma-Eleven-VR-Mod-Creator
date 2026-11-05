@@ -276,7 +276,7 @@ namespace G4Composition
             if (parsed.Parts.Count != meshes.Count) throw new InvalidDataException("Conservative G4MD readback mismatch.");
             return new Result { Metadata = metadata, Geometry = geometry, Textures = mergedTextures };
         }
-        static byte[] ReplaceNativeSection(byte[] metadata, int field, byte[] replacement)
+        internal static byte[] ReplaceNativeSection(byte[] metadata, int field, byte[] replacement)
         {
             int bias = U16(metadata, 10) * 4;
             int start = bias + U16(metadata, field) * 4;

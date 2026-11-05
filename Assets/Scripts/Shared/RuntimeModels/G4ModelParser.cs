@@ -126,9 +126,11 @@ namespace G4Runtime
                 }
                 model.Materials.Add(surface);
             }
-            var lods = meshNames.Select(n => Regex.Match(n, @"^(.*?)(?:_LOD(\d+))?$", RegexOptions.IgnoreCase)).ToArray();
+            // Number overlays also use a bare _LOD suffix for their reduced mesh.
+            var lods = meshNames.Select(n => Regex.Match(n, @"^(.*?)(?:_LOD(\d*))?$", RegexOptions.IgnoreCase)).ToArray();
+            int LodLevel(Match match) => !match.Groups[2].Success ? 0 : match.Groups[2].Length == 0 ? 1 : int.Parse(match.Groups[2].Value);
             var bestLod = lods.GroupBy(m => m.Groups[1].Value, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Min(m => m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(g => g.Key, g => g.Min(LodLevel), StringComparer.OrdinalIgnoreCase);
             // Combo files live in _face but also embed both actors' uniforms, shoes and ball.
             // Keep their head records only; preserve both heads in their authored positions.
             bool combo = source.Replace('\\', '/').IndexOf("/22_COMBO/", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -136,7 +138,7 @@ namespace G4Runtime
             {
                 token.ThrowIfCancellationRequested();
                 if (combo && !Regex.IsMatch(meshNames[i], @"^(?:tw_)?(?:c\d|eye_|mouth_|hair|face)", RegexOptions.IgnoreCase)) continue;
-                var lod = lods[i]; int level = lod.Groups[2].Success ? int.Parse(lod.Groups[2].Value) : 0;
+                var lod = lods[i]; int level = LodLevel(lod);
                 if (level != bestLod[lod.Groups[1].Value]) continue;
                 int o = table + i * 0x50, vo = md.Int(o), io = md.Int(o + 4), vc = md.Int(o + 8), ic = md.Int(o + 12);
                 int stride = md.U16(o + 0x3E) & 255; if (stride == 0) stride = 0x44;

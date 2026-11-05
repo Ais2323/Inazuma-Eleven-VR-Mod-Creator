@@ -105,7 +105,7 @@ namespace G4Composition
         public sealed class Selection
         {
             public uint ModelId;
-            public string Uniform, UniformTexture, Skin, SkinTexture;
+            public string Uniform, UniformTexture, Skin, SkinTexture, Number, NumberTexture, Armband, ArmbandTexture;
         }
         static CfgTable table;
         static string tablePath;
@@ -141,7 +141,9 @@ namespace G4Composition
             var selected = rows.FirstOrDefault(r => r.Int(2) == body.Int(4)) ?? rows.FirstOrDefault(r => r.Int(2) == body.Int(6));
             if (selected == null) return null;
             string Read(int field) => !string.IsNullOrWhiteSpace(selected.Text(field)) ? selected.Text(field) : rows[0].Text(field);
-            return new Selection { ModelId = cfg.Rows[index].UInt(0), Uniform = Read(0), UniformTexture = Read(1), Skin = Read(6), SkinTexture = Read(7) };
+            return new Selection { ModelId = cfg.Rows[index].UInt(0), Uniform = Read(0), UniformTexture = Read(1),
+                Number = Read(3), NumberTexture = Read(4), Skin = Read(6), SkinTexture = Read(7),
+                Armband = Read(8), ArmbandTexture = Read(9) };
         }
         public static bool Allowed(CfgTable.Row body, int sleeve, int hem)
         {

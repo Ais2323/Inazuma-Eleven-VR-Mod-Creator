@@ -602,6 +602,27 @@ namespace G4Composition
             }
 
             public int Byte(int offset) { binary.Range(offset, 1); return data[offset]; }
+            internal byte[] AppendRows(string listName, IReadOnlyList<byte[]> additional)
+            {
+                if (additional.Count == 0) return (byte[])data.Clone();
+                var list = GetList(listName);
+                if (additional.Any(row => row.Length != list.Stride)) throw new InvalidDataException("RDBNP row stride mismatch.");
+                int root = Enumerable.Range(0, rootCount).Select(i => roots + i * 32)
+                    .Single(r => names.TryGetValue(binary.U32(r + 16), out string name) && name == listName);
+                int length = checked((list.Count + additional.Count) * list.Stride);
+                int extra = checked((length + 15) & ~15);
+                var output = new byte[checked(data.Length + extra)];
+                Array.Copy(data, 0, output, 0, strings);
+                if (list.Count > 0) Array.Copy(data, list.Row(0), output, strings, list.Count * list.Stride);
+                int cursor = strings + list.Count * list.Stride;
+                foreach (var row in additional) { row.CopyTo(output, cursor); cursor += row.Length; }
+                Array.Copy(data, strings, output, strings + extra, data.Length - strings);
+                void Put(int offset, int value) => BitConverter.GetBytes(value).CopyTo(output, offset);
+                Put(root + 4, strings - values); Put(root + 12, list.Count + additional.Count);
+                Put(0x38, BitConverter.ToInt32(data, 0x38) + extra);
+                Put(0x0c, BitConverter.ToInt32(data, 0x0c) + extra);
+                return output;
+            }
             public int Int(int offset) => binary.Int(offset);
             public uint U32(int offset) => binary.U32(offset);
             public float Float(int offset) => binary.F32(offset);
@@ -625,6 +646,7 @@ namespace G4Composition
                 readonly string source; readonly int rows, stride;
                 readonly Dictionary<string, int> fields;
                 public int Count { get; }
+                internal int Stride => stride;
                 public List(string source, int rows, int count, int stride, Dictionary<string, int> fields)
                 { this.source = source; this.rows = rows; Count = count; this.stride = stride; this.fields = fields; }
                 public int Row(int index) => index >= 0 && index < Count ? checked(rows + index * stride) : throw new ArgumentOutOfRangeException(nameof(index));
