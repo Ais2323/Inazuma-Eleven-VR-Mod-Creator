@@ -9,9 +9,9 @@ using G4Runtime;
 public static partial class UniformMakerExporter
 {
     static string[] BuildResource(string mesh, string texture, UniformPartKind kind, bool split,
-        UniformMakerVariant variant, string key, Dictionary<UniformMakerTexture, byte[]> converted, Dictionary<string, byte[]> pending, string ownerName = null, string modelName = null)
+        UniformMakerVariant variant, string key, Dictionary<string, byte[]> converted, Dictionary<string, byte[]> pending, UniformCatalog catalog, string ownerName = null, string modelName = null)
     {
-        string stem = "um_" + Digest(key + "|" + kind + "|" + mesh + "|" + texture + "|" + ownerName + "|" + modelName);
+        string stem = "um_" + Digest(ResourceIdentity(mesh, texture, kind, split, variant, catalog, ownerName, modelName));
         string modelRelative = "_uniform/" + stem + "/" + (modelName ?? Path.GetFileName(mesh));
         // Keep the target kit's texture owner name for its native portrait lookup;
         // the private folder separates the edited payload from unrelated uniforms.
@@ -20,6 +20,10 @@ public static partial class UniformMakerExporter
         if (pending.ContainsKey(mdOutput)) return new[] { modelRelative, textureRelative };
         byte[] metadata = File.ReadAllBytes(Path.Combine(DumpDataManager.CommonPath, "chr", mesh));
         byte[] geometry = File.ReadAllBytes(Path.ChangeExtension(Path.Combine(DumpDataManager.CommonPath, "chr", mesh), ".g4mg"));
+        if (kind == UniformPartKind.Upper && variant.fbx != null) {
+            var rig = NativeBodyShape.Skeleton(catalog.BodyByAttribute(variant.bodyAttribute));
+            var imported = UniformFbxWriter.Build(metadata, geometry, variant.fbx, rig); metadata = imported.Metadata; geometry = imported.Geometry;
+        }
         byte[] container = File.ReadAllBytes(Path.Combine(DumpDataManager.Dx11Path, "chr", texture));
         var parsed = G4ModelParser.Parse(metadata, geometry, mesh);
         var nativeTextures = RawTexture.Read(container, texture);
@@ -27,10 +31,11 @@ public static partial class UniformMakerExporter
         byte[] Payload(RawTexture original, UniformPartKind part)
         {
             int channel = G4TextureParser.IsBase(original.Name) ? 0 : Regex.IsMatch(original.Name, @"oc(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 1 :
-                Regex.IsMatch(original.Name, @"msk(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 2 : -1;
+                Regex.IsMatch(original.Name, @"msk(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 2 :
+                Regex.IsMatch(original.Name, @"spm?(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 3 : -1;
             var edit = variant.textures.SingleOrDefault(t => t.part == part && t.channel == channel && t.originalName == original.Name);
             if (edit == null) return original.Dds;
-            if (!converted.TryGetValue(edit, out var dds)) converted.Add(edit, dds = UniformTextureCodec.ToDds(edit));
+            if (!converted.TryGetValue(TextureIdentity(edit), out var dds)) converted.Add(TextureIdentity(edit), dds = UniformTextureCodec.ToDds(edit));
             var expected = G4TextureParser.ParseDDS(original.Dds, original.Name);
             var actual = G4TextureParser.ParseDDS(dds, edit.fileName);
             if (actual.Width != expected.Width || actual.Height != expected.Height || actual.MipCount != expected.MipCount)
@@ -55,7 +60,7 @@ public static partial class UniformMakerExporter
             // Native upper/lower usually already have separate texture entries.
             // Preserve every shader, UV, skin and LOD binding byte-for-byte.
             bool changed = nativeTextures.Any(t => replacements.TryGetValue(t.Hash, out var dds) && !t.Dds.SequenceEqual(dds));
-            byte[] nativeContainer = changed ? RawTexture.Write(container, nativeTextures.Select(t => new RawTexture {
+            byte[] nativeContainer = changed ? RawTexture.WriteNativeLayout(container, container, nativeTextures.Select(t => new RawTexture {
                 Name = t.Name, Hash = t.Hash, Descriptor = t.Descriptor, Dds = replacements.TryGetValue(t.Hash, out var dds) ? dds : t.Dds }).ToArray()) : container;
             pending.Add(mdOutput, metadata); pending.Add(Path.ChangeExtension(mdOutput, ".g4mg"), geometry);
             pending.Add("dx11/chr/" + textureRelative, nativeContainer);
@@ -105,7 +110,7 @@ public static partial class UniformMakerExporter
         materialTable = Section(metadata, 0x64);
         for (int material = 0; material < materialCount; material++)
             BitConverter.GetBytes(checked((ushort)starts[material])).CopyTo(metadata, materialTable + material * 16 + 6);
-        byte[] textures = RawTexture.Write(container, outputTextures);
+        byte[] textures = RawTexture.WriteNativeLayout(container, container, outputTextures);
         var check = G4ModelParser.Parse(metadata, geometry, "Exported uniform");
         var textureCheck = G4TextureParser.Parse(textures, "Exported uniform textures", new List<string>(), baseOnly: false);
         foreach (var material in check.Materials)

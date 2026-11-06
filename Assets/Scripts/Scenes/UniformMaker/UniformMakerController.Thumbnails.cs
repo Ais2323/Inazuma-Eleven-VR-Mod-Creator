@@ -32,9 +32,22 @@ public sealed partial class UniformMakerController
             }
             else
             {
-                var clothes = NativeUniformFashion.Resolve(option.Id, body, 0, 0);
+                var clothes = kind == UniformPartKind.Upper ? NativeUniformFashion.Resolve(option.Id, body, 0, 0) : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(option.Id), body);
                 if (clothes == null) { ReleaseSample(root); return null; }
-                if (kind == UniformPartKind.Armband)
+                if (kind == UniformPartKind.Skin)
+                {
+                    if (string.IsNullOrWhiteSpace(clothes.Skin) || string.IsNullOrWhiteSpace(clothes.SkinTexture)) { ReleaseSample(root); return null; }
+                    var skin = Load(clothes.Skin, clothes.SkinTexture);
+                    foreach (var renderer in skin.GetComponentsInChildren<Renderer>()) renderer.sharedMaterial.SetFloat("_WholeSkin", 1);
+                }
+                else if (kind == UniformPartKind.Number || kind == UniformPartKind.Name)
+                {
+                    if (string.IsNullOrWhiteSpace(clothes.Number) || string.IsNullOrWhiteSpace(clothes.NumberTexture)) { ReleaseSample(root); return null; }
+                    var number = Load(clothes.Number, clothes.NumberTexture);
+                    FilterLabels(number, kind == UniformPartKind.Name);
+                    foreach (var renderer in number.GetComponentsInChildren<Renderer>()) if (kind == UniformPartKind.Number) renderer.sharedMaterial.mainTextureOffset = new Vector2(uniformNumber % 10 * .1f, uniformNumber / 10 * .1f);
+                }
+                else if (kind == UniformPartKind.Armband)
                 {
                     if (string.IsNullOrWhiteSpace(clothes.Armband) || string.IsNullOrWhiteSpace(clothes.ArmbandTexture)) { ReleaseSample(root); return null; }
                     Load(clothes.Armband, clothes.ArmbandTexture);

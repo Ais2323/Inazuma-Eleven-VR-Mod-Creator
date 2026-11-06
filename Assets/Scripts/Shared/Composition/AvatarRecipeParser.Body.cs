@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
@@ -138,7 +139,7 @@ namespace G4Composition
             var reference = cfg.Rows[index + 1];
             if (reference.Name != "CHARA_PARTS_CLOTHES_MODEL_REF_INFO") throw new InvalidDataException("Missing uniform reference: " + name);
             var rows = cfg.Rows.Where(r => r.Name == "CHARA_PARTS_CLOTHES_INFO").Skip((int)reference.Int(0)).Take((int)reference.Int(1)).ToArray();
-            var selected = rows.FirstOrDefault(r => r.Int(2) == body.Int(4)) ?? rows.FirstOrDefault(r => r.Int(2) == body.Int(6));
+            var selected = NativeBodyTypes.ClothesRow(rows, body);
             if (selected == null) return null;
             string Read(int field) => !string.IsNullOrWhiteSpace(selected.Text(field)) ? selected.Text(field) : rows[0].Text(field);
             return new Selection { ModelId = cfg.Rows[index].UInt(0), Uniform = Read(0), UniformTexture = Read(1),
@@ -150,7 +151,7 @@ namespace G4Composition
             return (sleeve == 0 || AvatarRecipeParser.IsFashionAllowed(body, 2)) &&
                 (hem != 2 || AvatarRecipeParser.IsFashionAllowed(body, 3));
         }
-        static string IconTextureStem(string model, string texture)
+        internal static string IconTextureStem(string model, string texture)
         {
             // Native uniform icon lookup derives body digits from the geometry name.
             if (model.Length < 7 || texture.Length < 7) return texture;
@@ -263,6 +264,22 @@ namespace G4Composition
 {
     public static class NativeBodyTypes
     {
+        // Retail tables have alternate attributes for the same shape and rig.
+        public static int[] EquivalentAttributes(CfgTable.Row body)
+        {
+            int attribute = (int)body.Int(4);
+            int alternate = attribute switch { 5 => 8, 8 => 5, 6 => 9, 9 => 6, 12 => 13, 13 => 12, 16 => 17, 17 => 16, _ => attribute };
+            return alternate == attribute ? new[] { attribute } : new[] { attribute, alternate };
+        }
+        public static CfgTable.Row ClothesRow(IEnumerable<CfgTable.Row> rows, CfgTable.Row body)
+        {
+            var all = rows.ToArray();
+            foreach (int attribute in EquivalentAttributes(body)) {
+                var exact = all.FirstOrDefault(row => row.Int(2) == attribute);
+                if (exact != null) return exact;
+            }
+            return all.FirstOrDefault(row => row.Int(2) == body.Int(6));
+        }
         // UI order: male, female, small, smallfat, tall, tallmuscle, big, muscle.
         // CHARA_BODY_INFO field 5 is a skeleton/gender group, not this shape index.
         static readonly int[] Shapes = { 0, 1, 2, 3, 4, 7, 6, 5 };

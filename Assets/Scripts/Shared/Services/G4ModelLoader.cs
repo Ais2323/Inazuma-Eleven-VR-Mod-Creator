@@ -18,15 +18,16 @@ public static class G4ModelLoader
         bool loadTextures = true,
         G4Skeleton skeletonOverride = null,
         bool headLocalSkinning = true,
-        AvatarBoneTransform rigidAttachment = null)
+        AvatarBoneTransform rigidAttachment = null,
+        byte[] metadataOverride = null, byte[] geometryOverride = null)
     {
         // ??頝臬?
         var modelRoot = Path.Combine(DumpDataManager.CommonPath, modelPath);
         var textureRoot = Path.Combine(DumpDataManager.Dx11Path, texturePath ?? modelPath);
 
         // ??g4md?4mg瑼?雿蔭
-        var meta = File.ReadAllBytes(Path.Combine(modelRoot, $"{modelName}.g4md"));
-        var geometry = File.ReadAllBytes(Path.Combine(modelRoot, $"{modelName}.g4mg"));
+        var meta = metadataOverride ?? File.ReadAllBytes(Path.Combine(modelRoot, $"{modelName}.g4md"));
+        var geometry = geometryOverride ?? File.ReadAllBytes(Path.Combine(modelRoot, $"{modelName}.g4mg"));
 
         // 閫??璅∪?
         var model = G4ModelParser.Parse(meta, geometry, modelRoot);

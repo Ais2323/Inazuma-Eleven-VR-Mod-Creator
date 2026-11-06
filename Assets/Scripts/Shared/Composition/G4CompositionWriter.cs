@@ -33,7 +33,7 @@ namespace G4Composition
             }
         }
         static string StableName(string prefix, string key) => prefix + "_" + RawHeadAsset.Digest(Encoding.UTF8.GetBytes(key)).Substring(0, 16);
-        public Result Build(CompositionDocument document, IReadOnlyDictionary<string, RawHeadAsset> sources, RawHeadAsset target, CancellationToken token)
+        public Result Build(CompositionDocument document, IReadOnlyDictionary<string, RawHeadAsset> sources, RawHeadAsset target, CancellationToken token, bool preserveNativeStructure = true)
         {
             if (document == null || document.Parts.Count == 0) throw new InvalidDataException("拼貼清單沒有部件。");
             CheckNative(target);
@@ -41,7 +41,7 @@ namespace G4Composition
             var materialIds = new Dictionary<string, int>(); var textureIds = new Dictionary<string, int>();
             // A resolved G4TX may be a parent container shared with other target models.
             // Retain its entries so replacing this head does not remove their texture dependencies.
-            foreach (var texture in target.Textures)
+            foreach (var texture in preserveNativeStructure ? target.Textures : Enumerable.Empty<RawTexture>())
             {
                 textureIds.Add(TextureIdentity(texture), textures.Count);
                 textures.Add(texture);
@@ -108,8 +108,10 @@ namespace G4Composition
                 p.Name.IndexOf("mouth", StringComparison.OrdinalIgnoreCase) >= 0);
             RawHeadAsset faceBase = facePart != null && sources.TryGetValue(facePart.SourceRelativePath, out var headBase)
                 ? headBase : nativeBase;
-            byte[] mergedTextures = MergeFaceTextures(nativeBase, faceBase);
-            return BuildConservative(target, nativeBase, meshes, joints, headJoint, mergedTextures, token);
+            if (preserveNativeStructure) {
+                byte[] mergedTextures = MergeFaceTextures(nativeBase, faceBase);
+                return BuildConservative(target, nativeBase, meshes, joints, headJoint, mergedTextures, token);
+            }
 #pragma warning disable CS0162
             if (meshes.Count > ushort.MaxValue || materials.Count > 255 || textures.Count > 255) throw new InvalidDataException("G4MD mesh/material/texture capacity exceeded.");
             var layouts = new List<byte[]>();
@@ -184,7 +186,10 @@ namespace G4Composition
                 s.Position = 12; w.Write(checked((int)s.Length - 0xa0)); metadata = s.ToArray();
             }
             var parsed = G4ModelParser.Parse(metadata, geometry, "composition.g4md", token);
-            if (parsed.Parts.Count != meshes.Count || parsed.Parts.Sum(m => m.Indices.Length) != meshes.Sum(m => m.Indices.Length)) throw new InvalidDataException("G4MD geometry roundtrip mismatch.");
+            // The preview parser intentionally selects the best LOD. Validate
+            // those source slots rather than comparing them with every LOD.
+            if (parsed.Parts.Count == 0 || parsed.Parts.Any(p => p.SourceMeshIndex >= meshes.Count || p.Indices.Length != meshes[p.SourceMeshIndex].Indices.Length))
+                throw new InvalidDataException("G4MD geometry roundtrip mismatch.");
             byte[] textureHeader = target.TextureContainer ?? sources.Values.First(a => a.TextureContainer != null).TextureContainer;
             return new Result { Metadata = metadata, Geometry = geometry, Textures = RawTexture.Write(textureHeader, textures) };
 #pragma warning restore CS0162

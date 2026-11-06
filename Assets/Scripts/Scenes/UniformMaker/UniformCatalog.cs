@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using G4Composition;
 
-// Match uniforms come from inventory entries, not every clothes model (which
-// also includes casual clothes, cutscene costumes and alternate body meshes).
+// Inventory uniforms remain replacement targets. The model picker independently
+// includes native casual/school costumes and resolves each family for the body.
 internal sealed class UniformCatalog
 {
     internal sealed class Entry
@@ -24,8 +24,10 @@ internal sealed class UniformCatalog
     {
         internal uint Id;
         internal string Name, TypeKey;
+        internal uint[] Candidates;
+        internal bool Empty, Inherit;
     }
-    internal readonly List<ModelOption> ClothesOptions = new(), ArmbandOptions = new(), GloveOptions = new();
+    internal readonly List<ModelOption> ClothesOptions = new(), ArmbandOptions = new(), GloveOptions = new(), SkinOptions = new(), NumberOptions = new(), NameOptions = new();
 
     internal readonly List<Entry> Entries = new();
     internal readonly CfgTable.Row Body;
@@ -38,7 +40,31 @@ internal sealed class UniformCatalog
     // A menu entry is a native model family, not a texture, team or body shape.
     // Each family's clothes record retains its own u/sk/n references for all bodies.
     internal List<ModelOption> OptionsFor(UniformPartKind kind) => kind == UniformPartKind.Upper
-        ? ClothesOptions : kind == UniformPartKind.Armband ? ArmbandOptions : GloveOptions;
+        ? ClothesOptions : kind == UniformPartKind.Armband ? ArmbandOptions : kind == UniformPartKind.Skin ? SkinOptions : kind == UniformPartKind.Number ? NumberOptions : kind == UniformPartKind.Name ? NameOptions : GloveOptions;
+
+    internal List<ModelOption> OptionsFor(UniformPartKind kind, CfgTable.Row body) => OptionsFor(kind).Select(option => {
+        uint id = (option.Candidates ?? new[] { option.Id }).FirstOrDefault(candidate => Supports(kind, candidate, body));
+        return id == 0 ? null : new ModelOption { Id = id, Name = option.Name, TypeKey = option.TypeKey, Candidates = option.Candidates };
+    }).Where(option => option != null).ToList();
+
+    internal bool Supports(UniformPartKind kind, uint id, CfgTable.Row body)
+    {
+        if (body == null) return false;
+        try {
+            string mesh, texture;
+            if (kind == UniformPartKind.Gloves) { var part = ResolveGloves(id, body); mesh = part?.Model; texture = part?.Texture; }
+            else {
+                var part = kind == UniformPartKind.Upper ? NativeUniformFashion.Resolve(id, body, 0, 0) : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(id), body);
+                mesh = kind == UniformPartKind.Armband ? part?.Armband : kind == UniformPartKind.Skin ? part?.Skin : (kind == UniformPartKind.Number || kind == UniformPartKind.Name) ? part?.Number : part?.Uniform;
+                texture = kind == UniformPartKind.Armband ? part?.ArmbandTexture : kind == UniformPartKind.Skin ? part?.SkinTexture : (kind == UniformPartKind.Number || kind == UniformPartKind.Name) ? part?.NumberTexture : part?.UniformTexture;
+            }
+            if ((kind == UniformPartKind.Number || kind == UniformPartKind.Name) && !UniformLabelAsset.HasPart(mesh, kind == UniformPartKind.Name)) return false;
+            return !string.IsNullOrWhiteSpace(mesh) && !string.IsNullOrWhiteSpace(texture) &&
+                File.Exists(Path.Combine(DumpDataManager.CommonPath, "chr", mesh)) &&
+                File.Exists(Path.ChangeExtension(Path.Combine(DumpDataManager.CommonPath, "chr", mesh), ".g4mg")) &&
+                File.Exists(Path.Combine(DumpDataManager.Dx11Path, "chr", texture));
+        } catch (InvalidDataException) { return false; }
+    }
 
     internal bool MatchesModel(UniformPartKind kind, ModelOption option, uint id)
         => id != 0 && option.TypeKey == ModelTypeKey(kind, id);
@@ -47,7 +73,7 @@ internal sealed class UniformCatalog
     {
         var lookup = kind == UniformPartKind.Gloves ? gloveRows : clothesRows;
         if (!lookup.TryGetValue(id, out var rows)) return null;
-        int field = kind == UniformPartKind.Armband ? 8 : 0;
+        int field = kind == UniformPartKind.Armband ? 8 : kind == UniformPartKind.Skin ? 6 : (kind == UniformPartKind.Number || kind == UniformPartKind.Name) ? 3 : 0;
         string path = rows.Select(r => r.Text(field)).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
         if (path == null) return null;
         // Native families keep their body variants together (u000101 contains
@@ -106,8 +132,9 @@ internal sealed class UniformCatalog
         return lookup.TryGetValue(entry.TextId, out string name) && !string.IsNullOrWhiteSpace(name) ? name : entry.Key;
     }
 
-    internal CfgTable.Row BodyForType(int type) => type >= 1 && type <= 8
-        ? NativeBodyTypes.ResolveForGender(bodyModels, type, 0, type == 2 ? 2 : 1) : null;
+    internal CfgTable.Row BodyForType(int type, int gender = 0) => type >= 1 && type <= 8 &&
+        NativeBodyTypes.CanSelect(bodyModels, type, gender == 0 ? (type == 2 ? 2 : 1) : gender)
+        ? NativeBodyTypes.ResolveForGender(bodyModels, type, 0, gender == 0 ? (type == 2 ? 2 : 1) : gender) : null;
     internal CfgTable.Row BodyByAttribute(int attribute) => bodyModels.Rows.FirstOrDefault(r =>
         r.Name == "CHARA_BODY_INFO" && r.Values.Length >= 7 && r.Int(4) == attribute) ?? Body;
 
@@ -153,22 +180,29 @@ internal sealed class UniformCatalog
             (isClothes ? clothesRows : gloveRows)[row.UInt(0)] = (isClothes ? clothes : gloves)
                 .Skip((int)reference.Int(0)).Take((int)reference.Int(1)).ToArray();
         }
-        // Only inventory match uniforms. The parts table also contains school,
-        // casual, cutscene and character-specific clothes in the same directory.
+        // Armband/glove choices remain their native equipment families; clothes
+        // additionally include school, casual and character-specific families.
         var matchClothes = new HashSet<uint>(Entries.SelectMany(e => e.Models.Cast<uint>()).Where(id => id != 0));
         var matchGloves = new HashSet<uint>(Entries.SelectMany(e => e.Gloves).Where(id => id != 0));
+        var modelNames = parts.Rows.Where(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL").ToDictionary(r => r.UInt(0), r => r.Text(1));
         void AddTypes(UniformPartKind kind, IEnumerable<uint> ids, List<ModelOption> target)
         {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (uint id in ids.OrderBy(v => v))
+            foreach (var group in ids.Distinct().GroupBy(id => ModelTypeKey(kind, id), StringComparer.OrdinalIgnoreCase))
             {
-                string key = ModelTypeKey(kind, id);
-                if (string.IsNullOrEmpty(key) || !seen.Add(key)) continue;
-                target.Add(new ModelOption { Id = id, Name = Path.GetFileName(key), TypeKey = key });
+                string key = group.Key;
+                if (string.IsNullOrEmpty(key)) continue;
+                uint[] candidates = group.OrderBy(v => {
+                    modelNames.TryGetValue(v, out string name);
+                    return kind != UniformPartKind.Gloves && (name?.EndsWith("_slv", StringComparison.OrdinalIgnoreCase) == true || name?.EndsWith("_blyR", StringComparison.OrdinalIgnoreCase) == true) ? 1 : 0;
+                }).ThenBy(v => v).ToArray();
+                target.Add(new ModelOption { Id = candidates[0], Candidates = candidates, Name = Path.GetFileName(key), TypeKey = key });
             }
             target.Sort((a, b) => StringComparer.Ordinal.Compare(a.Name, b.Name));
         }
-        AddTypes(UniformPartKind.Upper, matchClothes, ClothesOptions);
+        AddTypes(UniformPartKind.Upper, clothesRows.Keys, ClothesOptions);
+        AddTypes(UniformPartKind.Skin, clothesRows.Keys, SkinOptions);
+        AddTypes(UniformPartKind.Number, clothesRows.Keys, NumberOptions);
+        AddTypes(UniformPartKind.Name, clothesRows.Keys, NameOptions);
         AddTypes(UniformPartKind.Armband, matchClothes, ArmbandOptions);
         AddTypes(UniformPartKind.Gloves, matchGloves, GloveOptions);
     }

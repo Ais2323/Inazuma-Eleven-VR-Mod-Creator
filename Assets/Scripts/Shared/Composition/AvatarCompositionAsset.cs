@@ -67,7 +67,7 @@ namespace G4Composition
             }
         }
 
-        private static void EncodeMesh(RawMesh raw, byte[] layout, Mesh mesh, Matrix4x4 transform, uint head, AvatarMeshSkin skin)
+        internal static void EncodeMesh(RawMesh raw, byte[] layout, Mesh mesh, Matrix4x4 transform, uint head, AvatarMeshSkin skin)
         {
             if (mesh.vertexCount > ushort.MaxValue) throw new InvalidDataException("Avatar 網格超過原生 16-bit 頂點限制。");
             if (skin != null)

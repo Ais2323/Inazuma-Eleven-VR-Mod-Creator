@@ -10,17 +10,23 @@ public sealed partial class UniformMakerController
     public Image skinColor;
 
     readonly List<Button> bodyButtons = new(), collarButtons = new(), sleeveButtons = new(), hemButtons = new(), chestButtons = new();
-    int bodyType = 1, collar, sleeve, hem, chestSize = -1;
+    readonly List<Button> genderButtons = new();
+    int bodyType = 1, gender = 1, collar, sleeve, hem, chestSize = -1;
     Color appliedSkinColor;
-    CfgTable.Row CurrentBody => catalog?.BodyForType(bodyType);
+    CfgTable.Row CurrentBody => catalog?.BodyForType(bodyType, gender);
     Color SelectedSkinColor => skinColor != null ? skinColor.color : new Color32(255, 228, 208, 255);
 
     void InitializeBodySettings()
     {
         appliedSkinColor = SelectedSkinColor;
+        BindBodyButtons("Gender", 2, genderButtons, value => {
+            gender = value + 1;
+            if (catalog != null && catalog.BodyForType(bodyType, gender) == null) bodyType = gender == 2 ? 2 : 1;
+            RebuildBodyPreview();
+        });
         BindBodyButtons("BodyType", 8, bodyButtons, value =>
         {
-            if (catalog == null || catalog.BodyForType(value + 1) == null) return;
+            if (catalog == null || catalog.BodyForType(value + 1, gender) == null) return;
             bodyType = value + 1;
             RebuildBodyPreview();
         });
@@ -80,7 +86,8 @@ public sealed partial class UniformMakerController
 
     void RefreshBodySettingButtons()
     {
-        SetButtons(bodyButtons, bodyType - 1, i => catalog != null && catalog.BodyForType(i + 1) != null);
+        SetButtons(genderButtons, gender - 1, _ => catalog != null);
+        SetButtons(bodyButtons, bodyType - 1, i => catalog != null && catalog.BodyForType(i + 1, gender) != null);
         SetButtons(collarButtons, collar, _ => selected >= 0);
         SetButtons(sleeveButtons, sleeve, i => CanUseFashion(i, 0));
         SetButtons(hemButtons, hem, i => CanUseFashion(0, i));
@@ -101,6 +108,7 @@ public sealed partial class UniformMakerController
         Color color = SelectedSkinColor;
         if (color == appliedSkinColor) return;
         appliedSkinColor = color;
+        RefreshPortraitIcon();
         if (model == null) return;
         foreach (var renderer in model.GetComponentsInChildren<Renderer>(true))
             if (renderer.sharedMaterial.HasProperty("_SkinColor")) renderer.sharedMaterial.SetColor("_SkinColor", color);

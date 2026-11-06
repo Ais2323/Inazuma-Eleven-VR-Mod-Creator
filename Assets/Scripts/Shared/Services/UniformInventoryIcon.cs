@@ -53,43 +53,8 @@ internal static class UniformInventoryIcon
         Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllBytes(path, result);
     }
 
-    // Menu atlases use header offsets as well as counts. A parser that walks
-    // tables from the count alone can accept a file the game's loader rejects.
     internal static byte[] WriteContainer(byte[] native, byte[] current, System.Collections.Generic.IReadOnlyList<RawTexture> textures)
-    {
-        ValidateHeaderOffsets(native);
-        int count = BitConverter.ToUInt16(native, 0x20);
-        int hashes = (BitConverter.ToUInt16(native, 4) + count * 48 + 15) & ~15;
-        int names = (hashes + count * 5 + 3) & ~3;
-        int prefixStart = (names + count * 2 + 3) & ~3;
-        int firstName = names + Enumerable.Range(0, count).Min(i => (int)BitConverter.ToUInt16(native, names + i * 2));
-        if (firstName < prefixStart || firstName > native.Length) throw new InvalidDataException("Invalid native icon string-table prefix.");
-        byte[] prefix = native.Skip(prefixStart).Take(firstName - prefixStart).ToArray();
-        byte[] result = RawTexture.Write(current, textures, prefix);
-        int header = BitConverter.ToUInt16(result, 4);
-        int outputHashes = (header + textures.Count * 48 + 15) & ~15;
-        int outputIndices = outputHashes + textures.Count * 4;
-        int outputNames = (outputIndices + textures.Count + 3) & ~3;
-        int outputPayload = (header + BitConverter.ToInt32(result, 12) + 15) & ~15;
-        void Offset(int field, int position) => BitConverter.GetBytes(checked((ushort)((position - header) / 4))).CopyTo(result, field);
-        foreach (int field in new[] { 0x38, 0x3c, 0x42, 0x44 }) Offset(field, outputHashes);
-        Offset(0x3e, outputPayload); Offset(0x40, outputIndices); Offset(0x46, outputNames);
-        ValidateHeaderOffsets(result);
-        return result;
-    }
+        => RawTexture.WriteNativeLayout(native, current, textures);
 
-    internal static void ValidateHeaderOffsets(byte[] bytes)
-    {
-        int header = BitConverter.ToUInt16(bytes, 4), count = BitConverter.ToUInt16(bytes, 0x20);
-        int hashes = (header + count * 48 + 15) & ~15;
-        int indices = hashes + count * 4, names = (indices + count + 3) & ~3;
-        int payload = (header + BitConverter.ToInt32(bytes, 12) + 15) & ~15;
-        void Check(int field, int position)
-        {
-            if (header + BitConverter.ToUInt16(bytes, field) * 4 != position)
-                throw new InvalidDataException("Uniform icon atlas header offset mismatch at 0x" + field.ToString("X2") + ".");
-        }
-        foreach (int field in new[] { 0x38, 0x3c, 0x42, 0x44 }) Check(field, hashes);
-        Check(0x3e, payload); Check(0x40, indices); Check(0x46, names);
-    }
+    internal static void ValidateHeaderOffsets(byte[] bytes) => RawTexture.ValidateNativeLayout(bytes);
 }

@@ -28,7 +28,8 @@ public sealed partial class UniformMakerController
     {
         var outfit = GetSelection(side, role);
         if (outfit == null) throw new InvalidOperationException("Select a uniform first.");
-        string texturePath = kind == UniformPartKind.Number ? outfit.NumberTexture : outfit.UniformTexture;
+        string texturePath = (kind == UniformPartKind.Number || kind == UniformPartKind.Name) ? ResolveAccessory(kind, outfit)?.NumberTexture :
+            kind == UniformPartKind.Skin ? ResolveAccessory(kind, outfit)?.SkinTexture : outfit.UniformTexture;
         if (kind == UniformPartKind.Armband) texturePath = ResolveArmband(outfit)?.ArmbandTexture;
         if (kind == UniformPartKind.Gloves)
             texturePath = (CurrentEdit?.Gloves > 0 ? catalog.ResolveGloves(CurrentEdit.Gloves, CurrentBody) :
@@ -41,7 +42,8 @@ public sealed partial class UniformMakerController
             .Where(p => r.sharedMaterial.HasProperty(p)).Select(p => r.sharedMaterial.GetTexture(p)?.name)).Where(n => n != null));
         var textures = native.Where(t => names.Contains(t.Name)).ToArray();
         if (textures.Length == 0) throw new InvalidDataException("No native textures match this part.");
-        var saved = CreateDocument().variants.FirstOrDefault(v => v.side == side && v.role == role)?.textures;
+        var variants = CreateDocument().variants.Where(v => v.side == side && v.role == role).ToArray();
+        var saved = (variants.FirstOrDefault(v => v.bodyAttribute == CurrentBody.Int(4)) ?? variants.FirstOrDefault(v => v.bodyAttribute < 0))?.textures;
         // Prepare every payload before writing, so conversion errors cannot leave
         // a mixture of old and new textures in the selected output folder.
         var output = new Dictionary<string, byte[]>();
