@@ -46,9 +46,11 @@ public sealed partial class UniformMakerController
         internal uint Clothes, Armband, Gloves;
         internal uint Skin, Number, Name;
         internal bool HideSkin, HideNumber, HideArmband, HideGloves, HideName;
+        internal bool InheritPortraitCollar, InheritPortraitSleeve;
         internal UniformFbxModel Fbx;
         internal readonly Dictionary<string, TextureEdit> Textures = new();
         internal readonly Dictionary<string, string> Portraits = new();
+        internal readonly Dictionary<string, string> PortraitMasks = new();
     }
     sealed class PartControls
     {
@@ -91,11 +93,16 @@ public sealed partial class UniformMakerController
         if (!create) return legacy;
         edit = new KitEdit { Clothes = legacy?.Clothes ?? 0, Armband = legacy?.Armband ?? 0, Gloves = legacy?.Gloves ?? 0 };
         edit.Fbx = legacy?.Fbx?.Clone();
+        edit.InheritPortraitCollar = legacy?.InheritPortraitCollar ?? false;
+        edit.InheritPortraitSleeve = legacy?.InheritPortraitSleeve ?? false;
         edit.Name = legacy?.Name ?? 0; edit.HideName = legacy?.HideName ?? false;
         edit.Skin = legacy?.Skin ?? 0; edit.Number = legacy?.Number ?? 0;
         edit.HideSkin = legacy?.HideSkin ?? false; edit.HideNumber = legacy?.HideNumber ?? false;
         edit.HideArmband = legacy?.HideArmband ?? false; edit.HideGloves = legacy?.HideGloves ?? false;
-        if (legacy != null) foreach (var pair in legacy.Portraits) edit.Portraits.Add(pair.Key, pair.Value);
+        if (legacy != null) {
+            foreach (var pair in legacy.Portraits) edit.Portraits.Add(pair.Key, pair.Value);
+            foreach (var pair in legacy.PortraitMasks) edit.PortraitMasks.Add(pair.Key, pair.Value);
+        }
         if (legacy != null) foreach (var pair in legacy.Textures) {
             edit.Textures.Add(pair.Key, pair.Value.Copy());
         }

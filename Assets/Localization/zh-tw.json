@@ -149,5 +149,8 @@
     "UniformExportShirtName": "輸出隊服英文暱稱貼圖與 UV",
     "UniformPortraitIcon": "頭像隊服圖示",
     "UniformUploadPortraitIcon": "上傳頭像隊服圖",
-    "UniformExportPortraitIcon": "匯出頭像隊服圖"
+    "UniformExportPortraitIcon": "匯出頭像隊服圖",
+    "UniformUploadPortraitMask": "上傳皮膚遮罩",
+    "UniformPortraitInheritCollar": "領口沿用一般",
+    "UniformPortraitInheritSleeve": "袖子沿用一般"
 }

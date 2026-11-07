@@ -32,6 +32,7 @@ public static partial class UniformMakerExporter
         var nativeColorIds = new HashSet<uint>(nativeRows.Rows.Where(r => r.Name == "CHARA_PARTS_COLOR").Select(r => r.UInt(0)));
         var occupied = new HashSet<uint>(parts.Rows.Where(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" || r.Name == "CHARA_PARTS_GLOVE_MODEL").Select(r => r.UInt(0)));
         var converted = new Dictionary<string, byte[]>();
+        var portraitBindings = new Dictionary<string, string[]>();
         var pending = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         var replacementClothes = new Dictionary<uint, uint>();
         foreach (var doc in docs)
@@ -53,7 +54,7 @@ public static partial class UniformMakerExporter
                     if (id == 0 || !occupied.Add(id)) throw new InvalidDataException("Uniform resource ID collision: " + value);
                     return id;
                 }
-                if ((variant.portraitIcons?.Count ?? 0) > 0 || variant.clothesModelId != 0 || variant.armbandModelId != 0 || variant.skinModelId != 0 || variant.numberModelId != 0 || variant.nameModelId != 0 || variant.IsHidden(UniformPartKind.Name) ||
+                if ((variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0) || variant.clothesModelId != 0 || variant.armbandModelId != 0 || variant.skinModelId != 0 || variant.numberModelId != 0 || variant.nameModelId != 0 || variant.IsHidden(UniformPartKind.Name) ||
                     variant.IsHidden(UniformPartKind.Skin) || variant.IsHidden(UniformPartKind.Number) || variant.IsHidden(UniformPartKind.Armband) ||
                     variant.fbx != null || variant.textures.Any(t => t.part != UniformPartKind.Gloves))
                 {
@@ -143,11 +144,11 @@ public static partial class UniformMakerExporter
                                     var targetRow = targetInfo.FirstOrDefault(r => r.Int(2) == row.Int(2)) ?? targetInfo[0];
                                     ownerName = Path.GetFileName(targetRow.Text(1) ?? targetInfo[0].Text(1));
                                     modelName = Path.GetFileName(targetRow.Text(0) ?? targetInfo[0].Text(0));
-                                    if ((variant.portraitIcons?.Count ?? 0) > 0) {
-                                        string textureStem = WritePortraitFiles(variant, catalog.BodyByAttribute((int)row.Int(2)), sourceModel.UInt(0), targetModel.UInt(0),
-                                            key + suffix + ":" + row.Int(2), suffix == "_slv" ? 1 : 0, converted, pending);
-                                        ownerName = textureStem + ".g4tx";
-                                        modelName = "u" + Digest(key + suffix + ":" + row.Int(2) + "|portrait") + ".g4md";
+                                    if ((variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0)) {
+                                        var portrait = WritePortraitFiles(variant, catalog.BodyByAttribute((int)row.Int(2)), sourceModel.UInt(0), targetModel.UInt(0),
+                                            suffix == "_slv" ? 1 : 0, converted, pending, portraitBindings);
+                                        ownerName = portrait[1] + ".g4tx";
+                                        modelName = portrait[0] + ".g4md";
                                     }
                                 }
                                 var paths = BuildResource(mesh, texture, kind, split, variant, key, converted, pending, catalog, ownerName, modelName);
@@ -156,7 +157,7 @@ public static partial class UniformMakerExporter
                                 uint newHash = G4TextureParser.Crc32(Path.GetFileNameWithoutExtension(paths[1]));
                                 for (int field = 3; field < row.Values.Length; field++)
                                     if (row.Types[field] == 1 && row.UInt(field) == oldHash &&
-                                        !((variant.portraitIcons?.Count ?? 0) > 0 && nativeColorIds.Contains(row.UInt(field))))
+                                        !((variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0) && nativeColorIds.Contains(row.UInt(field))))
                                         row.Values[field] = unchecked((long)(int)newHash);
                             }
                             Build(0, 1, UniformPartKind.Upper, true);

@@ -149,5 +149,8 @@
     "UniformExportShirtName": "Export shirt-name textures and UV",
     "UniformPortraitIcon": "Portrait shirt icon",
     "UniformUploadPortraitIcon": "Upload portrait shirt",
-    "UniformExportPortraitIcon": "Export portrait shirt"
+    "UniformExportPortraitIcon": "Export portrait shirt",
+    "UniformUploadPortraitMask": "Upload skin mask",
+    "UniformPortraitInheritCollar": "Collar: use normal",
+    "UniformPortraitInheritSleeve": "Sleeves: use normal"
 }

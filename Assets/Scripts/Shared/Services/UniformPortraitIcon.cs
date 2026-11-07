@@ -50,10 +50,10 @@ internal sealed class UniformPortraitIcon
     internal Color32[] ClothPixels => clothPixels ??= CharacterManager.ReadDdsBasePixels(Cloth.Dds, Cloth.Name, false);
     internal Color32[] MaskPixels => maskPixels ??= CharacterManager.ReadDdsBasePixels(Mask.Dds, Mask.Name, false);
 
-    internal Color32[] Composite(string uploadedPng, Color32 skin)
+    internal Color32[] Composite(string uploadedPng, Color32 skin, string maskPng = null)
     {
         var pixels = string.IsNullOrEmpty(uploadedPng) ? (Color32[])ClothPixels.Clone() : ReadPngPixels(uploadedPng, Width, Height);
-        var mask = MaskPixels;
+        var mask = string.IsNullOrEmpty(maskPng) ? MaskPixels : ReadPngPixels(maskPng, Width, Height);
         for (int i = 0; i < pixels.Length; i++) {
             int alpha = mask[i].a * skin.a / 255;
             if (alpha == 0) continue;
@@ -103,13 +103,58 @@ internal sealed class UniformPortraitIcon
     internal byte[] EncodeCloth(string png) => string.IsNullOrEmpty(png) ? Cloth.Dds :
         Bc7PortraitEncoder.Encode(ReadPngPixels(png, Width, Height), Width, Height, CancellationToken.None);
 
-    internal byte[] Write(string targetStem, byte[] cloth)
+    internal byte[] EncodeMask(string png) => string.IsNullOrEmpty(png) ? Mask.Dds :
+        Bc7PortraitEncoder.Encode(ReadPngPixels(png, Width, Height), Width, Height, CancellationToken.None);
+
+    static readonly Dictionary<string, UniformPortraitIcon> writeTemplates = new();
+
+    internal byte[] Write(string targetStem, byte[] cloth, byte[] mask = null)
     {
-        var layers = new[] { Cloth, Mask }.Select((layer, i) => new RawTexture {
-            Name = targetStem + "_" + (i + 1), Hash = G4TextureParser.Crc32(targetStem + "_" + (i + 1)),
-            Descriptor = (byte[])layer.Descriptor.Clone(), Dds = i == 0 ? cloth : layer.Dds
-        }).ToArray();
-        return RawTexture.WriteNativeLayout(Container, Container, layers);
+        mask ??= Mask.Dds;
+        // Keep the native table, offsets and payload alignment intact. A simple icon
+        // and a sleeve composite need different, equal-width native name templates.
+        var template = this;
+        if (Stem.Length != targetStem.Length || Cloth.Dds.Length != cloth.Length || Mask.Dds.Length != mask.Length) {
+            string key = targetStem.Length + "|" + Width + "|" + Height + "|" + cloth.Length + "|" + mask.Length;
+            if (!writeTemplates.TryGetValue(key, out template)) {
+                foreach (string path in Directory.GetFiles(Path.Combine(DumpDataManager.Dx11Path, DirectoryPath), "*_l.g4tx").OrderBy(p => p, StringComparer.Ordinal)) {
+                    string stem = Path.GetFileName(path).Substring(0, Path.GetFileName(path).Length - 7);
+                    if (stem.Length != targetStem.Length) continue;
+                    try {
+                        var candidate = Load(stem);
+                        if (candidate.Width != Width || candidate.Height != Height || candidate.Cloth.Dds.Length != cloth.Length || candidate.Mask.Dds.Length != mask.Length) continue;
+                        template = candidate; break;
+                    }
+                    catch (InvalidDataException) { }
+                    catch (InvalidOperationException) { }
+                }
+                if (template == null) throw new InvalidDataException("No equal-width native portrait template: " + targetStem);
+                writeTemplates.Add(key, template);
+            }
+        }
+        byte[] result = (byte[])template.Container.Clone();
+        var layers = RawTexture.Read(result, template.Stem);
+        int header = BitConverter.ToUInt16(result, 4);
+        int hashes = (header + layers.Count * 48 + 15) & ~15;
+        int names = (hashes + layers.Count * 5 + 3) & ~3;
+        int payload = (header + BitConverter.ToInt32(result, 12) + 15) & ~15;
+        for (int i = 0; i < layers.Count; i++) {
+            string suffix = layers[i].Name.Substring(template.Stem.Length);
+            string name = targetStem + suffix;
+            var nameBytes = System.Text.Encoding.ASCII.GetBytes(name);
+            int nameAt = names + BitConverter.ToUInt16(result, names + i * 2);
+            Buffer.BlockCopy(nameBytes, 0, result, nameAt, nameBytes.Length);
+            Buffer.BlockCopy(BitConverter.GetBytes(G4TextureParser.Crc32(name)), 0, result, hashes + i * 4, 4);
+            byte[] dds = suffix == "_1" ? cloth : mask;
+            int dataAt = payload + BitConverter.ToInt32(result, header + i * 48 + 4);
+            Buffer.BlockCopy(dds, 0, result, dataAt, dds.Length);
+        }
+        result = RawTexture.SortLookupIndices(result);
+        RawTexture.ValidateNativeLayout(result);
+        var check = RawTexture.Read(result, targetStem);
+        if (check.Any(layer => !layer.Dds.SequenceEqual(layer.Name.EndsWith("_1", StringComparison.Ordinal) ? cloth : mask)))
+            throw new InvalidDataException("Uniform portrait payload changed during binding.");
+        return result;
     }
 
     static Color32[] Flip(Color32[] source, int width, int height)

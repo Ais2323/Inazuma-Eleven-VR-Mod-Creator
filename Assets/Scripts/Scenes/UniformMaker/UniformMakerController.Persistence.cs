@@ -54,10 +54,13 @@ public sealed partial class UniformMakerController
             var variant = new UniformMakerVariant { side = int.Parse(key[1]), role = int.Parse(key[2]), bodyAttribute = key.Length > 3 ? int.Parse(key[3]) : -1,
                 clothesModelId = edit.Clothes, armbandModelId = edit.Armband, gloveModelId = edit.Gloves, skinModelId = edit.Skin, numberModelId = edit.Number, nameModelId = edit.Name, hideName = edit.HideName, labelsConfigured = true,
                 hideSkin = edit.HideSkin, hideNumber = edit.HideNumber, hideArmband = edit.HideArmband, hideGloves = edit.HideGloves,
+                inheritPortraitCollar = edit.InheritPortraitCollar, inheritPortraitSleeve = edit.InheritPortraitSleeve,
                 accessoriesConfigured = true, fbx = edit.Fbx?.Clone() };
-            foreach (var portrait in edit.Portraits) {
-                var setting = portrait.Key.Split('/');
-                variant.portraitIcons.Add(new UniformMakerPortrait { collar = int.Parse(setting[0]), sleeve = int.Parse(setting[1]), pngBase64 = portrait.Value });
+            foreach (var portraitKey in edit.Portraits.Keys.Union(edit.PortraitMasks.Keys)) {
+                var setting = portraitKey.Split('/');
+                edit.Portraits.TryGetValue(portraitKey, out var cloth);
+                edit.PortraitMasks.TryGetValue(portraitKey, out var mask);
+                variant.portraitIcons.Add(new UniformMakerPortrait { collar = int.Parse(setting[0]), sleeve = int.Parse(setting[1]), pngBase64 = cloth, maskPngBase64 = mask });
             }
             foreach (var texture in edit.Textures.OrderBy(p => p.Key, StringComparer.Ordinal))
             {
@@ -86,13 +89,17 @@ public sealed partial class UniformMakerController
             foreach (var variant in doc.variants)
             {
                 var edit = new KitEdit { Clothes = variant.clothesModelId, Armband = variant.armbandModelId, Gloves = variant.gloveModelId, Fbx = variant.fbx?.Clone() };
+                edit.InheritPortraitCollar = variant.inheritPortraitCollar; edit.InheritPortraitSleeve = variant.inheritPortraitSleeve;
                 edit.Name = variant.NameModelId; edit.HideName = variant.IsHidden(UniformPartKind.Name);
                 edit.Skin = variant.skinModelId; edit.Number = variant.numberModelId;
                 edit.HideSkin = variant.IsHidden(UniformPartKind.Skin); edit.HideNumber = variant.IsHidden(UniformPartKind.Number);
                 edit.HideArmband = variant.IsHidden(UniformPartKind.Armband); edit.HideGloves = variant.IsHidden(UniformPartKind.Gloves);
                 prepared.Add(template + "/" + variant.side + "/" + variant.role + "/" + variant.bodyAttribute, edit);
-                foreach (var portrait in variant.portraitIcons ?? new List<UniformMakerPortrait>())
-                    edit.Portraits.Add(portrait.collar + "/" + portrait.sleeve, portrait.pngBase64);
+                foreach (var portrait in variant.portraitIcons ?? new List<UniformMakerPortrait>()) {
+                    string portraitKey = portrait.collar + "/" + portrait.sleeve;
+                    if (!string.IsNullOrEmpty(portrait.pngBase64)) edit.Portraits.Add(portraitKey, portrait.pngBase64);
+                    if (!string.IsNullOrEmpty(portrait.maskPngBase64)) edit.PortraitMasks.Add(portraitKey, portrait.maskPngBase64);
+                }
                 foreach (var saved in variant.textures)
                 {
                     string identity = string.Join("|", saved.part, saved.channel, saved.originalName, saved.extension, saved.width, saved.height,

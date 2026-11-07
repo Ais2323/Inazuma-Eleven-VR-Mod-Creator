@@ -71,9 +71,11 @@ public sealed partial class UniformMakerDocument
                 if (portrait == null || portrait.collar < 0 || portrait.collar > 1 || portrait.sleeve < 0 || portrait.sleeve > 1 ||
                     !portraitKeys.Add(portrait.collar + "/" + portrait.sleeve)) throw new InvalidDataException("Invalid uniform portrait setting.");
                 portrait.pngBase64 = Intern(portrait.pngBase64);
-                if (string.IsNullOrEmpty(portrait.pngBase64)) throw new InvalidDataException("Missing uniform portrait image.");
-                if (validatedPayloads.Add(portrait.pngBase64)) {
-                    byte[] png = Convert.FromBase64String(portrait.pngBase64);
+                portrait.maskPngBase64 = Intern(portrait.maskPngBase64);
+                if (string.IsNullOrEmpty(portrait.pngBase64) && string.IsNullOrEmpty(portrait.maskPngBase64)) throw new InvalidDataException("Missing uniform portrait image.");
+                foreach (var payload in new[] { portrait.pngBase64, portrait.maskPngBase64 })
+                if (!string.IsNullOrEmpty(payload) && validatedPayloads.Add(payload)) {
+                    byte[] png = Convert.FromBase64String(payload);
                     if (png.Length < 24 || Encoding.ASCII.GetString(png, 1, 3) != "PNG" || Encoding.ASCII.GetString(png, 12, 4) != "IHDR")
                         throw new InvalidDataException("Invalid uniform portrait PNG.");
                     long Dimension(int offset) => ((long)png[offset] << 24) | ((long)png[offset + 1] << 16) | ((long)png[offset + 2] << 8) | png[offset + 3];
@@ -122,18 +124,21 @@ public sealed class UniformMakerVariant
     internal UniformMakerVariant Copy() => (UniformMakerVariant)MemberwiseClone();
     public List<UniformMakerTexture> textures = new();
     public List<UniformMakerPortrait> portraitIcons = new();
+    public bool inheritPortraitCollar, inheritPortraitSleeve;
+    public int PortraitCollar(int value) => inheritPortraitCollar ? 0 : value;
+    public int PortraitSleeve(int value) => inheritPortraitSleeve ? 0 : value;
     public bool IsHidden(UniformPartKind kind) => (fbx != null && !fbx.IsEmpty && !accessoriesConfigured && kind != UniformPartKind.Upper && kind != UniformPartKind.Lower) ||
         (kind == UniformPartKind.Skin ? hideSkin : kind == UniformPartKind.Number ? hideNumber : kind == UniformPartKind.Name ? (labelsConfigured ? hideName : hideNumber) : kind == UniformPartKind.Armband ? hideArmband : kind == UniformPartKind.Gloves && hideGloves);
     public bool HasChanges => clothesModelId != 0 || armbandModelId != 0 || gloveModelId != 0 || skinModelId != 0 || numberModelId != 0 ||
         hideSkin || hideNumber || hideArmband || hideGloves || hideName || nameModelId != 0 || textures.Count > 0 ||
-        (portraitIcons?.Count ?? 0) > 0 || (fbx != null && !fbx.IsEmpty);
+        inheritPortraitCollar || inheritPortraitSleeve || (portraitIcons?.Count ?? 0) > 0 || (fbx != null && !fbx.IsEmpty);
 }
 
 [Serializable]
 public sealed class UniformMakerPortrait
 {
     public int collar, sleeve;
-    public string pngBase64, dataId;
+    public string pngBase64, dataId, maskPngBase64, maskDataId;
     internal UniformMakerPortrait Copy() => (UniformMakerPortrait)MemberwiseClone();
 }
 

@@ -38,7 +38,10 @@ public sealed partial class UniformMakerDocument
             foreach (var texture in variant.textures ?? new List<UniformMakerTexture>())
                 if (texture != null && !string.IsNullOrEmpty(texture.dataId)) texture.bytesBase64 = Resolve(texture.dataId);
             foreach (var portrait in variant.portraitIcons ?? new List<UniformMakerPortrait>())
-                if (portrait != null && !string.IsNullOrEmpty(portrait.dataId)) portrait.pngBase64 = Resolve(portrait.dataId);
+                if (portrait != null) {
+                    if (!string.IsNullOrEmpty(portrait.dataId)) portrait.pngBase64 = Resolve(portrait.dataId);
+                    if (!string.IsNullOrEmpty(portrait.maskDataId)) portrait.maskPngBase64 = Resolve(portrait.maskDataId);
+                }
         }
         sharedData = new List<UniformMakerBlob>(); sharedFbx = new List<UniformMakerFbxEntry>();
     }
@@ -51,6 +54,7 @@ public sealed partial class UniformMakerDocument
         var payloadIds = new Dictionary<string, string>(StringComparer.Ordinal);
         var modelIds = new Dictionary<string, string>(StringComparer.Ordinal);
         string AddPayload(string bytes) {
+            if (string.IsNullOrEmpty(bytes)) return null;
             if (payloadIds.TryGetValue(bytes, out var existing)) return existing;
             string id = ContentDigest(bytes); payloadIds.Add(bytes, id);
             copy.sharedData.Add(new UniformMakerBlob { id = id, bytesBase64 = bytes }); return id;
@@ -70,7 +74,7 @@ public sealed partial class UniformMakerDocument
                 var item = texture.Copy(); item.dataId = AddPayload(item.bytesBase64); item.bytesBase64 = null; return item;
             }).ToList();
             stored.portraitIcons = (variant.portraitIcons ?? new List<UniformMakerPortrait>()).Select(portrait => {
-                var item = portrait.Copy(); item.dataId = AddPayload(item.pngBase64); item.pngBase64 = null; return item;
+                var item = portrait.Copy(); item.dataId = AddPayload(item.pngBase64); item.pngBase64 = null; item.maskDataId = AddPayload(item.maskPngBase64); item.maskPngBase64 = null; return item;
             }).ToList();
             copy.variants.Add(stored);
         }
