@@ -115,17 +115,7 @@ public static partial class UniformMakerExporter
                                     if (kind == UniformPartKind.Number) { row.Types[5] = selectedPart.Types[5]; row.Values[5] = selectedPart.Values[5]; }
                                 }
                                 if (!variant.IsHidden(kind)) return;
-                                string hiddenMesh = row.Text(modelField) ?? Read(modelField), hiddenTexture = row.Text(textureField) ?? Read(textureField);
-                                if (string.IsNullOrWhiteSpace(hiddenMesh) || string.IsNullOrWhiteSpace(hiddenTexture)) {
-                                    var fallback = catalog.OptionsFor(kind, body).FirstOrDefault();
-                                    var part = fallback == null ? null : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(fallback.Id), body);
-                                    hiddenMesh = kind == UniformPartKind.Skin ? part?.Skin : kind == UniformPartKind.Number ? part?.Number : part?.Armband;
-                                    hiddenTexture = kind == UniformPartKind.Skin ? part?.SkinTexture : kind == UniformPartKind.Number ? part?.NumberTexture : part?.ArmbandTexture;
-                                }
-                                if (string.IsNullOrWhiteSpace(hiddenMesh) || string.IsNullOrWhiteSpace(hiddenTexture)) {
-                                    row.Types[modelField] = row.Types[textureField] = 1; row.Values[modelField] = row.Values[textureField] = 0L; return;
-                                }
-                                var hidden = BuildEmptyResource(hiddenMesh, hiddenTexture, kind, pending); Text(row, modelField, hidden[0]); Text(row, textureField, hidden[1]);
+                                ClearModelReference(row, modelField, textureField);
                             }
                             Accessory(6, 7, UniformPartKind.Skin, variant.skinModelId);
                             bool customLabels = variant.numberModelId != 0 || variant.NameModelId != 0 || variant.IsHidden(UniformPartKind.Number) || variant.IsHidden(UniformPartKind.Name) ||
@@ -133,6 +123,7 @@ public static partial class UniformMakerExporter
                             if (customLabels) {
                                 var labels = BuildLabels(Read(3), Read(4), variant, catalog.BodyByAttribute((int)row.Int(2)), key + suffix + ":" + row.Int(2), converted, pending);
                                 if (labels != null) { Text(row, 3, labels[0]); Text(row, 4, labels[1]); }
+                                else ClearModelReference(row, 3, 4);
                                 if (variant.numberModelId != 0) {
                                     var numberModel = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == variant.numberModelId);
                                     var numberRows = Referenced(nativeRows, numberModel, "CHARA_PARTS_CLOTHES_INFO");
@@ -219,9 +210,12 @@ public static partial class UniformMakerExporter
                     for (int i = 0; i < rows.Length; i++)
                     {
                         if (scopedFamily >= 0 && rows[i].Int(2) != scopedFamily) continue;
+                        if (variant.IsHidden(UniformPartKind.Gloves)) {
+                            ClearModelReference(rows[i], 0, 1);
+                            continue;
+                        }
                         string mesh = rows[i].Text(0) ?? sourceInfo[0].Text(0), texture = rows[i].Text(1) ?? sourceInfo[0].Text(1);
-                        var paths = variant.IsHidden(UniformPartKind.Gloves) ? BuildEmptyResource(mesh, texture, UniformPartKind.Gloves, pending) :
-                            BuildResource(mesh, texture, UniformPartKind.Gloves, false, variant, key, converted, pending, catalog);
+                        var paths = BuildResource(mesh, texture, UniformPartKind.Gloves, false, variant, key, converted, pending, catalog);
                         Text(rows[i], 0, paths[0]); Text(rows[i], 1, paths[1]);
                     }
                     uint id = Allocate(key + ":gloves");

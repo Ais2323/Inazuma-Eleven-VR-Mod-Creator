@@ -29,15 +29,7 @@ public static partial class UniformMakerExporter
             return asset;
         }
         var number = Source(UniformPartKind.Number, variant.numberModelId); var name = Source(UniformPartKind.Name, variant.NameModelId);
-        if (number == null && name == null) {
-            if (string.IsNullOrEmpty(originalMesh) || string.IsNullOrEmpty(originalTexture)) {
-                var fallback = new UniformCatalog().OptionsFor(UniformPartKind.Number, body).FirstOrDefault();
-                var selection = fallback == null ? null : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(fallback.Id), body);
-                originalMesh = selection?.Number; originalTexture = selection?.NumberTexture;
-            }
-            if (string.IsNullOrEmpty(originalMesh) || string.IsNullOrEmpty(originalTexture)) return null;
-            return BuildEmptyResource(originalMesh, originalTexture, UniformPartKind.Number, pending);
-        }
+        if (number == null && name == null) return null;
         var result = UniformLabelAsset.Combine(number, name);
         string folder = "_uniform/um_" + Digest(key + "|labels"), stem = Path.GetFileName(originalMesh ?? (number ?? name).ModelPath);
         string model = folder + "/" + stem, texturePath = folder + "/labels.g4tx";
