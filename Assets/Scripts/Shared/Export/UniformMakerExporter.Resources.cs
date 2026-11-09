@@ -20,9 +20,9 @@ public static partial class UniformMakerExporter
         if (pending.ContainsKey(mdOutput)) return new[] { modelRelative, textureRelative };
         byte[] metadata = File.ReadAllBytes(Path.Combine(DumpDataManager.CommonPath, "chr", mesh));
         byte[] geometry = File.ReadAllBytes(Path.ChangeExtension(Path.Combine(DumpDataManager.CommonPath, "chr", mesh), ".g4mg"));
-        if (kind == UniformPartKind.Upper && variant.fbx != null) {
+        if ((kind == UniformPartKind.Upper && (variant.fbx != null || variant.hideUpper || variant.hideLower)) || variant.partFbx.Any(p => p.part == kind || kind == UniformPartKind.Upper && p.part == UniformPartKind.Lower)) {
             var rig = NativeBodyShape.Skeleton(catalog.BodyByAttribute(variant.bodyAttribute));
-            var imported = UniformFbxWriter.Build(metadata, geometry, variant.fbx, rig); metadata = imported.Metadata; geometry = imported.Geometry;
+            var imported = UniformFbxWriter.Apply(metadata, geometry, variant, kind, rig); metadata = imported.Metadata; geometry = imported.Geometry;
         }
         byte[] container = File.ReadAllBytes(Path.Combine(DumpDataManager.Dx11Path, "chr", texture));
         var parsed = G4ModelParser.Parse(metadata, geometry, mesh);
@@ -33,7 +33,7 @@ public static partial class UniformMakerExporter
             int channel = G4TextureParser.IsBase(original.Name) ? 0 : Regex.IsMatch(original.Name, @"oc(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 1 :
                 Regex.IsMatch(original.Name, @"msk(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 2 :
                 Regex.IsMatch(original.Name, @"spm?(?:\.\d+|\.a)?$", RegexOptions.IgnoreCase) ? 3 : -1;
-            var edit = variant.textures.SingleOrDefault(t => t.part == part && t.channel == channel && t.originalName == original.Name);
+            var edit = variant.textures.SingleOrDefault(t => t.part == part && t.channel == channel && t.MatchesName(original.Name));
             if (edit == null) return original.Dds;
             if (!converted.TryGetValue(TextureIdentity(edit), out var dds)) converted.Add(TextureIdentity(edit), dds = UniformTextureCodec.ToDds(edit));
             var expected = G4TextureParser.ParseDDS(original.Dds, original.Name);

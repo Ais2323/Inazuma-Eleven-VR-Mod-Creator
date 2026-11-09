@@ -18,6 +18,8 @@ public sealed partial class UniformMakerController
     public InputField fbxScaleInput;
     public Toggle fbxFlipVToggle;
     public Text fbxStatus;
+    bool pendingFbxWhole;
+    UniformPartKind pendingFbxKind = UniformPartKind.Upper;
     UniformFbxReader pendingFbx;
     UniformFbxModel pendingFbxSettings;
     GameObject pendingFbxPreview;
@@ -39,26 +41,28 @@ public sealed partial class UniformMakerController
         });
     }
 
-    public void OnClickImportFbx()
+    public void OnClickImportFbx() => ImportFbxPart(UniformPartKind.Upper, true);
+
+    void ImportFbxPart(UniformPartKind kind, bool whole = false)
     {
         if (CurrentBody == null || selected < 0) return;
         var files = StandaloneFileBrowser.OpenFilePanel("Import uniform FBX", "", "fbx", false);
         if (files == null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return;
-        try { OpenFbxFile(files[0]); } catch (Exception e) { Debug.LogError("[UniformMaker FBX] " + e.Message, this); }
+        try { OpenFbxFile(files[0], kind, whole); } catch (Exception e) { Debug.LogError("[UniformMaker FBX] " + e.Message, this); }
     }
 
-    internal void OpenFbxFile(string path)
+    internal void OpenFbxFile(string path, UniformPartKind kind = UniformPartKind.Upper, bool whole = true)
     {
         if (fbxBindingPanel == null || fbxBoneTemplate == null || fbxMeshTemplate == null) throw new InvalidOperationException("Missing FBX binding panel in the scene.");
         if (new FileInfo(path).Length > 64 * 1024 * 1024) throw new InvalidDataException("FBX exceeds 64 MB.");
         byte[] bytes = File.ReadAllBytes(path); var imported = UniformFbxReader.Read(bytes);
         var rig = NativeBodyShape.Skeleton(CurrentBody);
         var settings = imported.BindAutomatically(bytes, Path.GetFileName(path), rig);
-        var outfit = GetSelection(side, role);
+        var outfit = FbxTemplate(kind);
         byte[] metadata = File.ReadAllBytes(Path.Combine(DumpDataManager.CommonPath, "chr", outfit.Uniform));
         var target = G4ModelParser.Parse(metadata, File.ReadAllBytes(Path.ChangeExtension(Path.Combine(DumpDataManager.CommonPath, "chr", outfit.Uniform), ".g4mg")), outfit.Uniform);
-        var slots = target.Parts.Where(p => p.Name != "collar_11").ToArray();
-        if (slots.Length == 0) throw new InvalidDataException("Uniform has no target mesh slots.");
+        var slots = target.Parts.Where(p => p.Name != "collar_11" && (whole || UniformFbxWriter.MatchesPart(target, p.SourceMeshIndex, kind))).ToArray();
+        if (slots.Length == 0) throw new InvalidDataException("No target mesh slots for " + kind + ": " + outfit.Uniform);
         for (int i = 0; i < imported.Parts.Length; i++) {
             var suffix = Regex.Match(imported.Parts[i].Name, @"^" + Regex.Escape(Path.GetFileNameWithoutExtension(outfit.Uniform)) + @"_(\d+)$", RegexOptions.IgnoreCase);
             if (suffix.Success && int.TryParse(suffix.Groups[1].Value, out int nativeSlot) && slots.Any(p => p.SourceMeshIndex == nativeSlot)) { settings.meshSlots[i] = nativeSlot; continue; }
@@ -67,7 +71,7 @@ public sealed partial class UniformMakerController
                 var b = new Bounds(p.Positions[0], Vector3.zero); foreach (var point in p.Positions) b.Encapsulate(point); return Vector3.SqrMagnitude(b.center - bounds.center);
             }).First().SourceMeshIndex;
         }
-        CloseFbxBindings(); CloseModelSelect(); pendingFbx = imported; pendingFbxSettings = settings;
+        CloseFbxBindings(); CloseModelSelect(); pendingFbx = imported; pendingFbxSettings = settings; pendingFbxKind = kind; pendingFbxWhole = whole;
         mainPanel.gameObject.SetActive(false); fbxBindingPanel.gameObject.SetActive(true);
         fbxScaleInput.SetTextWithoutNotify(settings.scale.ToString(CultureInfo.InvariantCulture));
         if (fbxFlipVToggle != null) fbxFlipVToggle.SetIsOnWithoutNotify(settings.flipV);
@@ -100,17 +104,59 @@ public sealed partial class UniformMakerController
         fbxApplyButton.interactable = fbxPreviewButton.interactable = complete;
     }
 
+    NativeUniformFashion.Selection FbxTemplate(UniformPartKind kind)
+    {
+        var outfit = GetSelection(side, role);
+        string mesh = outfit?.Uniform, texture = outfit?.UniformTexture;
+        if (kind == UniformPartKind.Gloves) {
+            var gloves = catalog.ResolveGloves(PartOverride(kind) != 0 ? PartOverride(kind) : catalog.Entries[selected].Gloves[shareAwayModels && side == 1 ? 0 : side], CurrentBody);
+            mesh = gloves?.Model; texture = gloves?.Texture;
+        }
+        else if (kind != UniformPartKind.Upper && kind != UniformPartKind.Lower) {
+            var chosen = PartOverride(kind) == 0 ? outfit : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(PartOverride(kind)), CurrentBody);
+            mesh = kind == UniformPartKind.Skin ? chosen?.Skin : kind == UniformPartKind.Armband ? chosen?.Armband : chosen?.Number;
+            texture = kind == UniformPartKind.Skin ? chosen?.SkinTexture : kind == UniformPartKind.Armband ? chosen?.ArmbandTexture : chosen?.NumberTexture;
+            if (string.IsNullOrWhiteSpace(mesh) ||
+                (kind == UniformPartKind.Name || kind == UniformPartKind.Number) && !UniformLabelAsset.HasPart(mesh, kind == UniformPartKind.Name)) {
+                var option = catalog.OptionsFor(kind, CurrentBody).FirstOrDefault() ?? throw new InvalidDataException("No native material template for " + kind);
+                chosen = NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(option.Id), CurrentBody);
+                mesh = kind == UniformPartKind.Skin ? chosen.Skin : kind == UniformPartKind.Armband ? chosen.Armband : chosen.Number;
+                texture = kind == UniformPartKind.Skin ? chosen.SkinTexture : kind == UniformPartKind.Armband ? chosen.ArmbandTexture : chosen.NumberTexture;
+            }
+        }
+        if (string.IsNullOrWhiteSpace(mesh) || string.IsNullOrWhiteSpace(texture)) throw new InvalidDataException("Missing FBX material template: " + kind);
+        return new NativeUniformFashion.Selection { Uniform = mesh, UniformTexture = texture };
+    }
+
+    UniformMakerVariant GeometrySettings()
+    {
+        var edit = ModelEdit;
+        return new UniformMakerVariant { fbx = edit?.Fbx, hideUpper = edit?.HideUpper ?? false, hideLower = edit?.HideLower ?? false,
+            accessoriesConfigured = true, labelsConfigured = true,
+            partFbx = edit?.PartFbx.Select(p => new UniformMakerPartFbx { part = p.Key, model = p.Value }).ToList() ?? new List<UniformMakerPartFbx>() };
+    }
+
+    UniformFbxWriter.Result BuildPartFbx(string mesh, UniformPartKind kind)
+    {
+        var settings = GeometrySettings();
+        if (kind != UniformPartKind.Upper && !settings.partFbx.Any(p => p.part == kind)) return null;
+        if (kind == UniformPartKind.Upper && settings.fbx == null && !settings.hideUpper && !settings.hideLower && !settings.partFbx.Any(p => p.part == UniformPartKind.Upper || p.part == UniformPartKind.Lower)) return null;
+        string path = Path.Combine(DumpDataManager.CommonPath, "chr", mesh);
+        return UniformFbxWriter.Apply(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")), settings, kind, NativeBodyShape.Skeleton(CurrentBody));
+    }
+
     UniformFbxWriter.Result BuildFbx(NativeUniformFashion.Selection outfit, UniformFbxModel settings)
     {
         string path = Path.Combine(DumpDataManager.CommonPath, "chr", outfit.Uniform);
-        return UniformFbxWriter.Build(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")), settings, NativeBodyShape.Skeleton(CurrentBody));
+        var parsed = G4ModelParser.Parse(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")), path);
+        return UniformFbxWriter.Build(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")), settings, NativeBodyShape.Skeleton(CurrentBody), pendingFbxWhole ? null : (Func<int, bool>)(slot => UniformFbxWriter.MatchesPart(parsed, slot, pendingFbxKind)));
     }
 
     public void OnClickPreviewFbx()
     {
         if (pendingFbxSettings == null) return;
         try {
-            var outfit = GetSelection(side, role); var generated = BuildFbx(outfit, pendingFbxSettings);
+            var outfit = FbxTemplate(pendingFbxKind); var generated = BuildFbx(outfit, pendingFbxSettings);
             ReleaseFbxPreview();
             pendingFbxPreview = G4ModelLoader.CreateModel(Path.Combine("chr", Path.GetDirectoryName(outfit.Uniform)), Path.GetFileNameWithoutExtension(outfit.Uniform),
                 Path.GetFileNameWithoutExtension(outfit.UniformTexture), Path.Combine("chr", Path.GetDirectoryName(outfit.UniformTexture)),
@@ -130,11 +176,25 @@ public sealed partial class UniformMakerController
     {
         if (pendingFbxSettings == null) return;
         try {
-            BuildFbx(GetSelection(side, role), pendingFbxSettings);
-            var edit = CurrentEdit; edit.Fbx = pendingFbxSettings.Clone();
-            edit.Skin = edit.Number = edit.Name = edit.Armband = edit.Gloves = 0;
-            edit.HideSkin = edit.HideNumber = edit.HideName = edit.HideArmband = edit.HideGloves = true;
-            ClearPartEdits(edit, UniformPartKind.Name, UniformPartKind.Skin, UniformPartKind.Number, UniformPartKind.Armband, UniformPartKind.Gloves);
+            BuildFbx(FbxTemplate(pendingFbxKind), pendingFbxSettings);
+            var edit = ModelEdit;
+            // Select a native material template before clearing an Empty selection.
+            if (PartOverride(pendingFbxKind) == 0 && pendingFbxKind != UniformPartKind.Upper && pendingFbxKind != UniformPartKind.Lower) {
+                var option = catalog.OptionsFor(pendingFbxKind, CurrentBody).FirstOrDefault();
+                if (option != null) SetAccessory(pendingFbxKind, option.Id, false);
+            }
+            if (pendingFbxKind == UniformPartKind.Upper) edit.HideUpper = false;
+            else if (pendingFbxKind == UniformPartKind.Lower) edit.HideLower = false;
+            else SetAccessory(pendingFbxKind, PartOverride(pendingFbxKind), false);
+            if (pendingFbxWhole) {
+                edit.Fbx = pendingFbxSettings.Clone(); edit.PartFbx.Remove(UniformPartKind.Upper); edit.PartFbx.Remove(UniformPartKind.Lower);
+                edit.HideUpper = edit.HideLower = false;
+                edit.Skin = edit.Number = edit.Name = edit.Armband = edit.Gloves = 0;
+                edit.HideSkin = edit.HideNumber = edit.HideName = edit.HideArmband = edit.HideGloves = true;
+                foreach (var kind in new[] { UniformPartKind.Skin, UniformPartKind.Number, UniformPartKind.Name, UniformPartKind.Armband, UniformPartKind.Gloves }) edit.PartFbx.Remove(kind);
+                ClearPartEdits(CurrentEdit, UniformPartKind.Name, UniformPartKind.Skin, UniformPartKind.Number, UniformPartKind.Armband, UniformPartKind.Gloves);
+            }
+            else edit.PartFbx[pendingFbxKind] = pendingFbxSettings.Clone();
             CloseFbxBindings(); RebuildBodyPreview();
         } catch (Exception e) { fbxStatus.text = e.Message; Debug.LogError("[UniformMaker FBX] " + e.Message, this); }
     }

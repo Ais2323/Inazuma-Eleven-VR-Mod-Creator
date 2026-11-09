@@ -41,7 +41,7 @@ public sealed partial class UniformMakerController
         if (catalog == null || selected < 0) throw new InvalidOperationException("Select a uniform first.");
         var entry = catalog.Entries[selected];
         var doc = new UniformMakerDocument { targetUniformId = isNewUniform ? 0 : entry.Id, targetKey = entry.Key,
-            isNewUniform = isNewUniform, templateUniformId = entry.Id, newUniformKey = newUniformKey,
+            shareAwayModels = shareAwayModels, isNewUniform = isNewUniform, templateUniformId = entry.Id, newUniformKey = newUniformKey,
             uniformName = uniformNames.Find(n => n.locale == nameLocale)?.name,
             names = uniformNames.Select(n => new UniformLocalizedName { locale = n.locale, name = n.name }).ToList(),
             iconPngBase64 = uploadedIcon == null ? null : Convert.ToBase64String(uploadedIcon),
@@ -55,6 +55,8 @@ public sealed partial class UniformMakerController
                 clothesModelId = edit.Clothes, armbandModelId = edit.Armband, gloveModelId = edit.Gloves, skinModelId = edit.Skin, numberModelId = edit.Number, nameModelId = edit.Name, hideName = edit.HideName, labelsConfigured = true,
                 hideSkin = edit.HideSkin, hideNumber = edit.HideNumber, hideArmband = edit.HideArmband, hideGloves = edit.HideGloves,
                 inheritPortraitCollar = edit.InheritPortraitCollar, inheritPortraitSleeve = edit.InheritPortraitSleeve,
+                hideUpper = edit.HideUpper, hideLower = edit.HideLower,
+                partFbx = edit.PartFbx.Select(p => new UniformMakerPartFbx { part = p.Key, model = p.Value.Clone() }).ToList(),
                 accessoriesConfigured = true, fbx = edit.Fbx?.Clone() };
             foreach (var portraitKey in edit.Portraits.Keys.Union(edit.PortraitMasks.Keys)) {
                 var setting = portraitKey.Split('/');
@@ -68,7 +70,7 @@ public sealed partial class UniformMakerController
                 variant.textures.Add(new UniformMakerTexture { part = (UniformPartKind)Enum.Parse(typeof(UniformPartKind), channel[0]),
                     channel = int.Parse(channel[1]), originalName = value.OriginalName, fileName = Path.GetFileName(value.Path),
                     extension = Path.GetExtension(value.Path).ToLowerInvariant(), width = value.Width, height = value.Height,
-                    mipCount = value.MipCount, bytesBase64 = value.SourceBase64 });
+                    sharedAcrossBodies = value.SharedAcrossBodies, mipCount = value.MipCount, bytesBase64 = value.SourceBase64 });
             }
             doc.variants.Add(variant);
         }
@@ -77,7 +79,7 @@ public sealed partial class UniformMakerController
 
     internal void RestoreDocument(UniformMakerDocument doc)
     {
-        doc.Validate();
+        doc.Validate(); shareAwayModels = doc.shareAwayModels;
         if (catalog == null) throw new InvalidOperationException("Uniform data is not loaded.");
         uint template = doc.isNewUniform ? doc.templateUniformId : doc.targetUniformId;
         int index = catalog.Entries.FindIndex(e => e.Id == template);
@@ -90,6 +92,8 @@ public sealed partial class UniformMakerController
             {
                 var edit = new KitEdit { Clothes = variant.clothesModelId, Armband = variant.armbandModelId, Gloves = variant.gloveModelId, Fbx = variant.fbx?.Clone() };
                 edit.InheritPortraitCollar = variant.inheritPortraitCollar; edit.InheritPortraitSleeve = variant.inheritPortraitSleeve;
+                edit.HideUpper = variant.hideUpper; edit.HideLower = variant.hideLower;
+                foreach (var part in variant.partFbx) edit.PartFbx.Add(part.part, part.model.Clone());
                 edit.Name = variant.NameModelId; edit.HideName = variant.IsHidden(UniformPartKind.Name);
                 edit.Skin = variant.skinModelId; edit.Number = variant.numberModelId;
                 edit.HideSkin = variant.IsHidden(UniformPartKind.Skin); edit.HideNumber = variant.IsHidden(UniformPartKind.Number);
@@ -103,11 +107,11 @@ public sealed partial class UniformMakerController
                 foreach (var saved in variant.textures)
                 {
                     string identity = string.Join("|", saved.part, saved.channel, saved.originalName, saved.extension, saved.width, saved.height,
-                        saved.mipCount, UniformMakerDocument.ContentDigest(saved.bytesBase64));
+                        saved.mipCount, saved.sharedAcrossBodies, UniformMakerDocument.ContentDigest(saved.bytesBase64));
                     if (texturePool.TryGetValue(identity, out var shared)) {
                         edit.Textures.Add(TextureKey(saved.part, saved.channel, saved.originalName), shared.Copy()); continue;
                     }
-                    var texture = new TextureEdit { OriginalName = saved.originalName,
+                    var texture = new TextureEdit { SharedAcrossBodies = saved.sharedAcrossBodies, OriginalName = saved.originalName,
                         SourceBase64 = saved.bytesBase64, Width = saved.width, Height = saved.height, Linear = saved.channel != 0,
                         Path = saved.fileName, MipCount = saved.mipCount };
                     texturePool.Add(identity, texture); edit.Textures.Add(TextureKey(saved.part, saved.channel, saved.originalName), texture);

@@ -23,7 +23,7 @@ public sealed partial class UniformMakerController
         Texture2D texture;
         int references = 1;
         internal int Width, Height;
-        internal bool Linear;
+        internal bool Linear, SharedAcrossBodies;
         internal byte[] SourceBytes { get => bytes ??= Convert.FromBase64String(base64); set { bytes = value; base64 = null; } }
         internal string SourceBase64 { get => base64 ??= Convert.ToBase64String(bytes); set { base64 = value; bytes = null; } }
         internal int MipCount;
@@ -47,6 +47,8 @@ public sealed partial class UniformMakerController
         internal uint Skin, Number, Name;
         internal bool HideSkin, HideNumber, HideArmband, HideGloves, HideName;
         internal bool InheritPortraitCollar, InheritPortraitSleeve;
+        internal bool HideUpper, HideLower;
+        internal readonly Dictionary<UniformPartKind, UniformFbxModel> PartFbx = new();
         internal UniformFbxModel Fbx;
         internal readonly Dictionary<string, TextureEdit> Textures = new();
         internal readonly Dictionary<string, string> Portraits = new();
@@ -55,7 +57,7 @@ public sealed partial class UniformMakerController
     sealed class PartControls
     {
         internal Transform Root;
-        internal Button Select, Export;
+        internal Button Select, Export, Import;
         internal RawImage Icon;
         internal readonly Button[] Buttons = new Button[4];
         internal readonly RawImage[] Images = new RawImage[4];
@@ -75,6 +77,8 @@ public sealed partial class UniformMakerController
     Coroutine modelPageRoutine;
     List<UniformCatalog.ModelOption> modelOptions;
 
+    KitEdit ModelEdit => shareAwayModels && side == 1 ? EditFor(0, role, true) : CurrentEdit;
+
     KitEdit CurrentEdit
     {
         get
@@ -93,6 +97,8 @@ public sealed partial class UniformMakerController
         if (!create) return legacy;
         edit = new KitEdit { Clothes = legacy?.Clothes ?? 0, Armband = legacy?.Armband ?? 0, Gloves = legacy?.Gloves ?? 0 };
         edit.Fbx = legacy?.Fbx?.Clone();
+        edit.HideUpper = legacy?.HideUpper ?? false; edit.HideLower = legacy?.HideLower ?? false;
+        if (legacy != null) foreach (var part in legacy.PartFbx) edit.PartFbx.Add(part.Key, part.Value.Clone());
         edit.InheritPortraitCollar = legacy?.InheritPortraitCollar ?? false;
         edit.InheritPortraitSleeve = legacy?.InheritPortraitSleeve ?? false;
         edit.Name = legacy?.Name ?? 0; edit.HideName = legacy?.HideName ?? false;
@@ -119,6 +125,8 @@ public sealed partial class UniformMakerController
             var controls = new PartControls { Root = root, Select = root.Find("Select")?.GetComponent<Button>(),
                 Icon = root.Find("Select/RawImage")?.GetComponent<RawImage>() };
             partControls.Add(kind, controls);
+            controls.Import = root.Find("ImportFbx")?.GetComponent<Button>();
+            if (controls.Import != null) controls.Import.onClick.AddListener(() => ImportFbxPart(kind));
             EnsureSpmControl(root);
             if (controls.Select != null) controls.Select.onClick.AddListener(() => OpenModelSelect(kind));
             controls.Export = partsPanel.Find(kind + "Export")?.GetComponent<Button>();
@@ -149,11 +157,11 @@ public sealed partial class UniformMakerController
     public void OpenModelSelect(UniformPartKind kind)
     {
         if (catalog == null || selected < 0 || modelChoices.Count == 0 || kind == UniformPartKind.Gloves && role != 1) return;
-        if (kind != UniformPartKind.Upper && kind != UniformPartKind.Armband && kind != UniformPartKind.Gloves && kind != UniformPartKind.Skin && kind != UniformPartKind.Number && kind != UniformPartKind.Name) return;
+        if (kind != UniformPartKind.Upper && kind != UniformPartKind.Lower && kind != UniformPartKind.Armband && kind != UniformPartKind.Gloves && kind != UniformPartKind.Skin && kind != UniformPartKind.Number && kind != UniformPartKind.Name) return;
         CloseFbxBindings();
         modelKind = kind;
-        modelOptions = catalog.OptionsFor(kind, CurrentBody);
-        if (kind != UniformPartKind.Upper) {
+        modelOptions = kind == UniformPartKind.Lower ? new List<UniformCatalog.ModelOption>() : catalog.OptionsFor(kind, CurrentBody);
+        {
             modelOptions.Insert(0, new UniformCatalog.ModelOption { Name = "Empty", Empty = true });
             modelOptions.Insert(1, new UniformCatalog.ModelOption { Name = "Inherit", Inherit = true });
         }
@@ -242,14 +250,15 @@ public sealed partial class UniformMakerController
 
     internal void SelectPartModel(UniformPartKind kind, uint id)
     {
-        var edit = CurrentEdit;
+        var edit = ModelEdit;
         if (edit == null) return;
         if (kind == UniformPartKind.Upper)
         {
             var resolved = NativeUniformFashion.Resolve(id, CurrentBody, 0, 0);
             if (resolved == null) return;
             edit.Clothes = resolved.ModelId;
-            edit.Fbx = null;
+            edit.Fbx = null; edit.PartFbx.Remove(kind);
+            if (kind == UniformPartKind.Upper) edit.HideUpper = false; else edit.HideLower = false;
             ClearPartEdits(edit, UniformPartKind.Upper, UniformPartKind.Lower, UniformPartKind.Number);
         }
         else if (kind == UniformPartKind.Armband || kind == UniformPartKind.Skin || kind == UniformPartKind.Number || kind == UniformPartKind.Name || kind == UniformPartKind.Gloves && role == 1)
@@ -287,10 +296,11 @@ public sealed partial class UniformMakerController
                 controls.Export.gameObject.SetActive(kind != UniformPartKind.Gloves || role == 1);
                 controls.Export.interactable = CurrentTexture(kind, 0) != null;
             }
+            if (controls.Import != null) controls.Import.interactable = selected >= 0;
             if (controls.Select != null) controls.Select.interactable = selected >= 0 && (kind != UniformPartKind.Gloves || role == 1);
             if (controls.Icon != null)
             {
-                GameObject root = kind == UniformPartKind.Upper ? uniformModel : kind == UniformPartKind.Name ? nameModel : kind == UniformPartKind.Skin ? skinModel : kind == UniformPartKind.Number ? numberModel : kind == UniformPartKind.Armband ? armbandModel : kind == UniformPartKind.Gloves ? gloveModel : null;
+                GameObject root = (kind == UniformPartKind.Upper || kind == UniformPartKind.Lower) ? uniformModel : kind == UniformPartKind.Name ? nameModel : kind == UniformPartKind.Skin ? skinModel : kind == UniformPartKind.Number ? numberModel : kind == UniformPartKind.Armband ? armbandModel : kind == UniformPartKind.Gloves ? gloveModel : null;
                 if (root != null && !partIcons.ContainsKey(kind)) partIcons[kind] = RenderModelThumbnail(root);
                 controls.Icon.texture = partIcons.TryGetValue(kind, out var icon) ? icon : null;
                 controls.Icon.uvRect = new Rect(0, 0, 1, 1);
@@ -363,7 +373,7 @@ public sealed partial class UniformMakerController
                         var material = renderer.sharedMaterial;
                         if (!material.HasProperty(TextureProperties[channel])) continue;
                         var original = material.GetTexture(TextureProperties[channel]);
-                        if (original != null && original.name == edit.OriginalName) material.SetTexture(TextureProperties[channel], edit.Texture);
+                        if (original != null && (original.name == edit.OriginalName || edit.SharedAcrossBodies && UniformMakerTexture.TextureSuffix(original.name) == UniformMakerTexture.TextureSuffix(edit.OriginalName))) material.SetTexture(TextureProperties[channel], edit.Texture);
                     }
         }
     }

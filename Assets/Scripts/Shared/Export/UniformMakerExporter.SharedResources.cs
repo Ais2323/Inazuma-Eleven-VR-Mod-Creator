@@ -14,15 +14,15 @@ public static partial class UniformMakerExporter
     static string PayloadHash(string value) => payloadHashes.GetValue(value, text => new ContentHash { Value = UniformMakerDocument.ContentDigest(text) }).Value;
 
     static string TextureIdentity(UniformMakerTexture texture) => string.Join("|", texture.part, texture.channel,
-        texture.originalName, texture.extension, texture.width, texture.height, texture.mipCount, PayloadHash(texture.bytesBase64));
+        texture.originalName, texture.sharedAcrossBodies, texture.extension, texture.width, texture.height, texture.mipCount, PayloadHash(texture.bytesBase64));
 
     static string ResourceIdentity(string mesh, string texture, UniformPartKind kind, bool split, UniformMakerVariant variant, UniformCatalog catalog, string ownerName, string modelName)
     {
         string fbx = "";
-        if (kind == UniformPartKind.Upper && variant.fbx != null) {
-            var settings = variant.fbx.Clone(); settings.dataId = PayloadHash(settings.bytesBase64); settings.bytesBase64 = null; settings.fileName = null;
+        if ((kind == UniformPartKind.Upper && (variant.fbx != null || variant.hideUpper || variant.hideLower)) || variant.partFbx.Any(p => p.part == kind || kind == UniformPartKind.Upper && p.part == UniformPartKind.Lower)) {
+            var settings = kind == UniformPartKind.Upper ? variant.fbx?.Clone() : null; if (settings != null) { settings.dataId = PayloadHash(settings.bytesBase64); settings.bytesBase64 = null; settings.fileName = null; }
             var body = catalog.BodyByAttribute(variant.bodyAttribute);
-            fbx = JsonUtility.ToJson(settings) + "|" + NativeBodyShape.Skeleton(body).SourceDigest;
+            fbx = JsonUtility.ToJson(settings) + "|" + variant.hideUpper + "|" + variant.hideLower + "|" + string.Join(";", variant.partFbx.Where(p => p.part == kind || kind == UniformPartKind.Upper && p.part == UniformPartKind.Lower).Select(p => p.part + ":" + PayloadHash(p.model.bytesBase64) + ":" + JsonUtility.ToJson(new UniformFbxModel { bones = p.model.bones, meshSlots = p.model.meshSlots, scale = p.model.scale, flipV = p.model.flipV }))) + "|" + NativeBodyShape.Skeleton(body).SourceDigest;
         }
         var edits = variant.textures.Where(t => t.part == kind || split && t.part == UniformPartKind.Lower)
             .OrderBy(t => t.part).ThenBy(t => t.channel).ThenBy(t => t.originalName, StringComparer.Ordinal).Select(TextureIdentity);
@@ -31,8 +31,8 @@ public static partial class UniformMakerExporter
 
     static IEnumerable<UniformMakerVariant> ExpandBodyVariants(UniformMakerDocument document, UniformCatalog catalog)
     {
-        var explicitKeys = new HashSet<string>(document.variants.Select(v => v.side + "/" + v.role + "/" + v.bodyAttribute));
-        foreach (var variant in document.variants) {
+        var explicitKeys = new HashSet<string>(document.EffectiveVariants().Select(v => v.side + "/" + v.role + "/" + v.bodyAttribute));
+        foreach (var variant in document.EffectiveVariants()) {
             yield return variant;
             if (variant.bodyAttribute < 0) continue;
             foreach (int attribute in NativeBodyTypes.EquivalentAttributes(catalog.BodyByAttribute(variant.bodyAttribute))) {

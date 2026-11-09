@@ -8,6 +8,27 @@ public sealed partial class UniformMakerController
 {
     public Transform bodySetting;
     public Image skinColor;
+    public Toggle shareAwayModelsToggle;
+    public Button shareBodyTexturesButton;
+    bool shareAwayModels;
+
+    public void OnClickShareBodyTextures()
+    {
+        if (CurrentEdit == null) return;
+        var source = CurrentEdit;
+        foreach (var texture in source.Textures.Values) texture.SharedAcrossBodies = true;
+        for (int attribute = 0; attribute < 18; attribute++) {
+            if (catalog.BodyByAttribute(attribute) == null) continue;
+            string key = catalog.Entries[selected].Id + "/" + side + "/" + role + "/" + attribute;
+            if (!kitEdits.TryGetValue(key, out var target)) kitEdits.Add(key, target = new KitEdit());
+            if (ReferenceEquals(source, target)) continue;
+            foreach (var old in target.Textures.Values) old.Release();
+            target.Textures.Clear();
+            foreach (var texture in source.Textures) target.Textures.Add(texture.Key, texture.Value.Copy());
+        }
+        RefreshButtons();
+        Debug.Log("[UniformMaker] Applied current kit textures to all body types.", this);
+    }
 
     readonly List<Button> bodyButtons = new(), collarButtons = new(), sleeveButtons = new(), hemButtons = new(), chestButtons = new();
     readonly List<Button> genderButtons = new();
@@ -18,6 +39,11 @@ public sealed partial class UniformMakerController
 
     void InitializeBodySettings()
     {
+        if (shareBodyTexturesButton != null) shareBodyTexturesButton.onClick.AddListener(OnClickShareBodyTextures);
+        if (shareAwayModelsToggle != null) shareAwayModelsToggle.onValueChanged.AddListener(value => {
+            if (shareAwayModels == value) return;
+            shareAwayModels = value; RebuildBodyPreview();
+        });
         appliedSkinColor = SelectedSkinColor;
         BindBodyButtons("Gender", 2, genderButtons, value => {
             gender = value + 1;
@@ -67,7 +93,7 @@ public sealed partial class UniformMakerController
     bool CanUseFashion(int wantedSleeve, int wantedHem)
     {
         if (CurrentBody == null || selected < 0 || !NativeUniformFashion.Allowed(CurrentBody, wantedSleeve, wantedHem)) return false;
-        return catalog.Resolve(catalog.Entries[selected], side, role, CurrentBody, wantedSleeve, wantedHem, CurrentEdit?.Clothes ?? 0) != null;
+        return catalog.Resolve(catalog.Entries[selected], side, role, CurrentBody, wantedSleeve, wantedHem, ModelEdit?.Clothes ?? 0) != null;
     }
 
     void NormalizeFashion()
@@ -86,6 +112,8 @@ public sealed partial class UniformMakerController
 
     void RefreshBodySettingButtons()
     {
+        if (shareAwayModelsToggle != null) shareAwayModelsToggle.SetIsOnWithoutNotify(shareAwayModels);
+        if (shareBodyTexturesButton != null) shareBodyTexturesButton.interactable = catalog != null && selected >= 0;
         SetButtons(genderButtons, gender - 1, _ => catalog != null);
         SetButtons(bodyButtons, bodyType - 1, i => catalog != null && catalog.BodyForType(i + 1, gender) != null);
         SetButtons(collarButtons, collar, _ => selected >= 0);

@@ -95,7 +95,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
         if (catalog == null || index < 0 || index >= catalog.Entries.Count) return;
         CloseFbxBindings();
         DisposePartEditor();
-        isNewUniform = false; newUniformKey = null;
+        isNewUniform = false; newUniformKey = null; shareAwayModels = false;
         if (freeShopToggle != null) freeShopToggle.SetIsOnWithoutNotify(false);
         selected = index;
         LoadUniformInfo();
@@ -138,8 +138,10 @@ public sealed partial class UniformMakerController : MonoBehaviour
         {
             try
             {
-                var edit = EditFor(wantedSide, wantedRole, false);
+                int modelSide = shareAwayModels && wantedSide == 1 ? 0 : wantedSide;
+                var edit = EditFor(modelSide, wantedRole, false);
                 uint custom = edit?.Clothes ?? 0;
+                if (shareAwayModels && wantedSide == 1 && custom == 0) custom = catalog.Entries[selected].Models[0, wantedRole];
                 selection = catalog.Resolve(catalog.Entries[selected], wantedSide, wantedRole, CurrentBody, sleeve, hem, custom)
                     ?? catalog.Resolve(catalog.Entries[selected], wantedSide, wantedRole, CurrentBody, overrideId: custom);
             }
@@ -175,9 +177,9 @@ public sealed partial class UniformMakerController : MonoBehaviour
         {
             var rig = NativeBodyShape.Skeleton(CurrentBody);
             var pose = NativeBodyShape.Outfit(CurrentBody, chestSize, hem);
-            GameObject Load(string mesh, string texture)
+            GameObject Load(string mesh, string texture, UniformPartKind kind = UniformPartKind.Upper)
             {
-                UniformFbxWriter.Result imported = mesh == outfit.Uniform && CurrentEdit?.Fbx != null ? BuildFbx(outfit, CurrentEdit.Fbx) : null;
+                UniformFbxWriter.Result imported = BuildPartFbx(mesh, kind);
                 var part = G4ModelLoader.CreateModel(Path.Combine("chr", Path.GetDirectoryName(mesh)),
                     Path.GetFileNameWithoutExtension(mesh), Path.GetFileNameWithoutExtension(texture),
                     Path.Combine("chr", Path.GetDirectoryName(texture)), boneTransforms: pose,
@@ -185,23 +187,23 @@ public sealed partial class UniformMakerController : MonoBehaviour
                 part.transform.SetParent(model.transform, false);
                 return part;
             }
-            var uniform = Load(outfit.Uniform, outfit.UniformTexture);
+            var uniform = PartHidden(UniformPartKind.Upper) && PartHidden(UniformPartKind.Lower) ? null : Load(outfit.Uniform, outfit.UniformTexture);
             uniformModel = uniform;
-            foreach (var renderer in uniform.GetComponentsInChildren<Renderer>())
+            foreach (var renderer in uniform != null ? uniform.GetComponentsInChildren<Renderer>() : Array.Empty<Renderer>())
                 renderer.sharedMaterial.SetColor("_SkinColor", SelectedSkinColor);
             var skinOutfit = ResolveAccessory(UniformPartKind.Skin, outfit);
             if (!string.IsNullOrWhiteSpace(skinOutfit?.Skin))
             {
-                var skin = Load(skinOutfit.Skin, skinOutfit.SkinTexture); skinModel = skin;
+                var skin = Load(skinOutfit.Skin, skinOutfit.SkinTexture, UniformPartKind.Skin); skinModel = skin;
                 foreach (var renderer in skin.GetComponentsInChildren<Renderer>())
                 {
                     renderer.sharedMaterial.SetFloat("_WholeSkin", 1);
                     renderer.sharedMaterial.SetColor("_SkinColor", SelectedSkinColor);
                 }
             }
-            foreach (var filter in uniform.GetComponentsInChildren<MeshFilter>())
+            foreach (var filter in uniform != null ? uniform.GetComponentsInChildren<MeshFilter>() : Array.Empty<MeshFilter>())
             {
-                if (CurrentEdit?.Fbx == null) {
+                if (ModelEdit?.Fbx == null && !ModelEdit.PartFbx.ContainsKey(UniformPartKind.Upper)) {
                     if (filter.name.Equals("collar_10", StringComparison.OrdinalIgnoreCase)) filter.gameObject.SetActive(collar == 0);
                     if (filter.name.Equals("collar_11", StringComparison.OrdinalIgnoreCase)) filter.gameObject.SetActive(collar == 1);
                 }
@@ -209,35 +211,35 @@ public sealed partial class UniformMakerController : MonoBehaviour
             var numberOutfit = ResolveAccessory(UniformPartKind.Number, outfit);
             if (!string.IsNullOrWhiteSpace(numberOutfit?.Number) && !string.IsNullOrWhiteSpace(numberOutfit.NumberTexture))
             {
-                numberModel = Load(numberOutfit.Number, numberOutfit.NumberTexture);
+                numberModel = Load(numberOutfit.Number, numberOutfit.NumberTexture, UniformPartKind.Number);
                 FilterLabels(numberModel, false);
                 ApplyNumber();
             }
             var nameOutfit = ResolveAccessory(UniformPartKind.Name, outfit);
             if (!string.IsNullOrWhiteSpace(nameOutfit?.Number) && UniformLabelAsset.HasPart(nameOutfit.Number, true)) {
-                nameModel = Load(nameOutfit.Number, nameOutfit.NumberTexture); FilterLabels(nameModel, true);
+                nameModel = Load(nameOutfit.Number, nameOutfit.NumberTexture, UniformPartKind.Name); FilterLabels(nameModel, true);
             }
             var armband = ResolveArmband(outfit);
             if (!string.IsNullOrWhiteSpace(armband?.Armband) && !string.IsNullOrWhiteSpace(armband.ArmbandTexture))
             {
-                armbandModel = Load(armband.Armband, armband.ArmbandTexture);
+                armbandModel = Load(armband.Armband, armband.ArmbandTexture, UniformPartKind.Armband);
                 foreach (var renderer in armbandModel.GetComponentsInChildren<Renderer>())
                     renderer.sharedMaterial.SetColor("_SkinColor", SelectedSkinColor);
             }
             if (role == 1 && !PartHidden(UniformPartKind.Gloves))
             {
-                var gloves = CurrentEdit?.Gloves > 0 ? catalog.ResolveGloves(CurrentEdit.Gloves, CurrentBody) :
-                    catalog.ResolveGloves(catalog.Entries[selected], side, CurrentBody);
+                var gloves = ModelEdit?.Gloves > 0 ? catalog.ResolveGloves(ModelEdit.Gloves, CurrentBody) :
+                    catalog.ResolveGloves(catalog.Entries[selected], shareAwayModels && side == 1 ? 0 : side, CurrentBody);
                 if (gloves != null)
                 {
-                    gloveModel = Load(gloves.Model, gloves.Texture);
+                    gloveModel = Load(gloves.Model, gloves.Texture, UniformPartKind.Gloves);
                     foreach (var renderer in gloveModel.GetComponentsInChildren<Renderer>())
                         renderer.sharedMaterial.SetColor("_SkinColor", SelectedSkinColor);
                 }
             }
             ApplyPartTextures();
             var renderers = model.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) throw new InvalidDataException("Uniform has no visible mesh.");
+            if (renderers.Length == 0) return;
             Bounds bounds = renderers[0].bounds;
             foreach (var renderer in renderers) bounds.Encapsulate(renderer.bounds);
             Vector3 neck = new Vector3(bounds.center.x, bounds.max.y, bounds.center.z);

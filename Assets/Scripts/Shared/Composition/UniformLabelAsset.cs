@@ -22,12 +22,17 @@ namespace G4Composition
             return names.Any(n => IsName(n) == name);
         }
 
-        internal static RawHeadAsset Read(string mesh, string texture, G4Skeleton rig)
+        internal static RawHeadAsset Read(string mesh, string texture, G4Skeleton rig, UniformFbxModel imported = null, UniformPartKind kind = UniformPartKind.Number)
         {
             string path = Path.Combine(DumpDataManager.CommonPath, "chr", mesh);
             var asset = new RawHeadAsset { RelativePath = mesh + "|" + texture, ModelPath = path, Metadata = File.ReadAllBytes(path),
                 Geometry = File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")), Skeleton = rig,
                 TexturePath = Path.Combine(DumpDataManager.Dx11Path, "chr", texture) };
+            if (imported != null) {
+                var original = G4ModelParser.Parse(asset.Metadata, asset.Geometry, path);
+                var result = UniformFbxWriter.Build(asset.Metadata, asset.Geometry, imported, rig, slot => UniformFbxWriter.MatchesPart(original, slot, kind));
+                asset.Metadata = result.Metadata; asset.Geometry = result.Geometry;
+            }
             asset.Preview = G4ModelParser.Parse(asset.Metadata, asset.Geometry, path);
             var b = asset.Reader; int table = b.U16(4), count = b.U16(0x20), cursor = table + count * 0x50;
             for (int i = 0; i < b.U8(0x26); i++) { int size = 8 + b.U8(cursor + 1) * 8; asset.Layouts.Add(asset.Metadata.Skip(cursor).Take(size).ToArray()); cursor += size; }

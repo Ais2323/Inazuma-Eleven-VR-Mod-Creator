@@ -43,7 +43,13 @@ public static partial class UniformMakerExporter
                 ?? throw new InvalidDataException("Unknown target uniform: " + doc.targetKey);
             int info = Enumerable.Range(0, uniformList.Count).Select(uniformList.Row).Single(r => config.U32(r) == targetId);
             uint span = config.U32(info + uniformList.Field("modelInfo"));
-            foreach (var variant in ExpandBodyVariants(doc, catalog).Where(v => v.HasChanges).OrderBy(v => v.bodyAttribute))
+            foreach (var variant in ExpandBodyVariants(doc, catalog).Select(v => {
+                if (!doc.shareAwayModels || v.side != 1) return v;
+                var shared = v.Copy();
+                if (shared.clothesModelId == 0) shared.clothesModelId = entry.Models[0, shared.role];
+                if (shared.gloveModelId == 0) shared.gloveModelId = entry.Gloves[0];
+                return shared;
+            }).Where(v => v.HasChanges).OrderBy(v => v.bodyAttribute))
             {
                 int model = Enumerable.Range((int)(span & 0xffff), (int)(span >> 16)).Select(modelList.Row)
                     .Single(r => config.Byte(r + modelList.Field("typeId")) == variant.side);
@@ -56,9 +62,9 @@ public static partial class UniformMakerExporter
                 }
                 if ((variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0) || variant.clothesModelId != 0 || variant.armbandModelId != 0 || variant.skinModelId != 0 || variant.numberModelId != 0 || variant.nameModelId != 0 || variant.IsHidden(UniformPartKind.Name) ||
                     variant.IsHidden(UniformPartKind.Skin) || variant.IsHidden(UniformPartKind.Number) || variant.IsHidden(UniformPartKind.Armband) ||
-                    variant.fbx != null || variant.textures.Any(t => t.part != UniformPartKind.Gloves))
+                    variant.hideUpper || variant.hideLower || variant.partFbx.Any(p => p.part != UniformPartKind.Gloves) || variant.fbx != null || variant.textures.Any(t => t.part != UniformPartKind.Gloves))
                 {
-                    uint template = variant.clothesModelId != 0 ? variant.clothesModelId : entry.Models[variant.side, variant.role];
+                    uint template = variant.clothesModelId != 0 ? variant.clothesModelId : entry.Models[doc.shareAwayModels && variant.side == 1 ? 0 : variant.side, variant.role];
                     var templateModel = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == template);
                     string sourceName = templateModel.Text(1);
                     var targetModel = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == entry.Models[variant.side, variant.role]);
@@ -71,7 +77,7 @@ public static partial class UniformMakerExporter
                     foreach (string suffix in new[] { "", "_slv", "_blyR" })
                     {
                         var sourceModel = nativeRows.Rows.FirstOrDefault(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.Text(1) == sourceName + suffix);
-                        if (variant.fbx != null) sourceModel = templateModel;
+                        if (variant.fbx != null || variant.partFbx.Any(p => p.part == UniformPartKind.Upper || p.part == UniformPartKind.Lower)) sourceModel = templateModel;
                         if (sourceModel == null && variant.bodyAttribute >= 0) sourceModel = templateModel;
                         if (sourceModel == null) continue;
                         uint id = Allocate(targetName + suffix);
@@ -119,7 +125,7 @@ public static partial class UniformMakerExporter
                                 ClearModelReference(row, modelField, textureField);
                             }
                             Accessory(6, 7, UniformPartKind.Skin, variant.skinModelId);
-                            bool customLabels = variant.numberModelId != 0 || variant.NameModelId != 0 || variant.IsHidden(UniformPartKind.Number) || variant.IsHidden(UniformPartKind.Name) ||
+                            bool customLabels = variant.numberModelId != 0 || variant.NameModelId != 0 || variant.IsHidden(UniformPartKind.Number) || variant.IsHidden(UniformPartKind.Name) || variant.partFbx.Any(p => p.part == UniformPartKind.Number || p.part == UniformPartKind.Name) ||
                                 variant.textures.Any(t => t.part == UniformPartKind.Number || t.part == UniformPartKind.Name);
                             if (customLabels) {
                                 var labels = BuildLabels(Read(3), Read(4), variant, catalog.BodyByAttribute((int)row.Int(2)), key + suffix + ":" + row.Int(2), converted, pending);
@@ -160,7 +166,8 @@ public static partial class UniformMakerExporter
                                         !((variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0) && nativeColorIds.Contains(row.UInt(field))))
                                         row.Values[field] = unchecked((long)(int)newHash);
                             }
-                            Build(0, 1, UniformPartKind.Upper, true);
+                            if (variant.hideUpper && variant.hideLower) ClearModelReference(row, 0, 1);
+                            else Build(0, 1, UniformPartKind.Upper, true);
                             if (!variant.IsHidden(UniformPartKind.Skin)) Build(6, 7, UniformPartKind.Skin, false);
                             if (!customLabels) Build(3, 4, UniformPartKind.Number, false);
                             if (!variant.IsHidden(UniformPartKind.Armband)) Build(8, 9, UniformPartKind.Armband, false);
@@ -189,9 +196,9 @@ public static partial class UniformMakerExporter
                         if (variantMap.TryGetValue(config.U32(offset), out uint replacement)) Put(configBytes, offset, replacement);
                     }
                 }
-                if (variant.role == 1 && (variant.gloveModelId != 0 || variant.IsHidden(UniformPartKind.Gloves) || variant.textures.Any(t => t.part == UniformPartKind.Gloves)))
+                if (variant.role == 1 && (variant.gloveModelId != 0 || variant.IsHidden(UniformPartKind.Gloves) || variant.partFbx.Any(p => p.part == UniformPartKind.Gloves) || variant.textures.Any(t => t.part == UniformPartKind.Gloves)))
                 {
-                    uint template = variant.gloveModelId != 0 ? variant.gloveModelId : entry.Gloves[variant.side];
+                    uint template = variant.gloveModelId != 0 ? variant.gloveModelId : entry.Gloves[doc.shareAwayModels && variant.side == 1 ? 0 : variant.side];
                     var glove = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_GLOVE_MODEL" && r.UInt(0) == template);
                     var sourceInfo = Referenced(nativeRows, glove, "CHARA_PARTS_GLOVE_INFO");
                     var rows = sourceInfo.Select(r => r.Clone()).ToArray();

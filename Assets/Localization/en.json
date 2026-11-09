@@ -152,5 +152,8 @@
     "UniformExportPortraitIcon": "Export portrait shirt",
     "UniformUploadPortraitMask": "Upload skin mask",
     "UniformPortraitInheritCollar": "Collar: use normal",
-    "UniformPortraitInheritSleeve": "Sleeves: use normal"
+    "UniformPortraitInheritSleeve": "Sleeves: use normal",
+    "UniformImportPartFbx": "Import FBX for this part",
+    "UniformShareAwayModels": "Away kit uses home models",
+    "UniformShareBodyTextures": "Apply textures to all body types"
 }

@@ -32,6 +32,9 @@ public sealed partial class UniformMakerController
                 var row = Instantiate(controls.Root.gameObject, controls.Root.parent, false);
                 row.name = kind + "Textures_" + rowIndex; row.transform.SetSiblingIndex(controls.Root.GetSiblingIndex() + rowIndex);
                 controls.ExtraRows.Add(row); root = row.transform;
+                var import = root.Find("ImportFbx"); if (import != null) import.gameObject.SetActive(false);
+                var layout = root.GetComponent<HorizontalLayoutGroup>(); if (layout != null) layout.padding.bottom = 5;
+                root.GetComponent<RectTransform>().SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 100);
                 var select = root.Find("Select");
                 if (select != null) {
                     var button = select.GetComponent<Button>(); if (button != null) { button.onClick.RemoveAllListeners(); button.interactable = false; }

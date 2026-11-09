@@ -32,7 +32,7 @@ public sealed partial class UniformMakerController
             }
             else
             {
-                var clothes = kind == UniformPartKind.Upper ? NativeUniformFashion.Resolve(option.Id, body, 0, 0) : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(option.Id), body);
+                var clothes = (kind == UniformPartKind.Upper || kind == UniformPartKind.Lower) ? NativeUniformFashion.Resolve(option.Id, body, 0, 0) : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(option.Id), body);
                 if (clothes == null) { ReleaseSample(root); return null; }
                 if (kind == UniformPartKind.Skin)
                 {

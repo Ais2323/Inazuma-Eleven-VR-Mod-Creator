@@ -35,6 +35,11 @@ public sealed partial class UniformMakerDocument
                 if (!models.TryGetValue(variant.fbxId, out var model)) throw new InvalidDataException("Missing shared FBX binding: " + variant.fbxId);
                 variant.fbx = model;
             }
+            foreach (var part in variant.partFbx ?? new List<UniformMakerPartFbx>()) {
+                if (string.IsNullOrEmpty(part.fbxId)) continue;
+                if (!models.TryGetValue(part.fbxId, out var model)) throw new InvalidDataException("Missing part FBX binding.");
+                part.model = model;
+            }
             foreach (var texture in variant.textures ?? new List<UniformMakerTexture>())
                 if (texture != null && !string.IsNullOrEmpty(texture.dataId)) texture.bytesBase64 = Resolve(texture.dataId);
             foreach (var portrait in variant.portraitIcons ?? new List<UniformMakerPortrait>())
@@ -59,6 +64,14 @@ public sealed partial class UniformMakerDocument
             string id = ContentDigest(bytes); payloadIds.Add(bytes, id);
             copy.sharedData.Add(new UniformMakerBlob { id = id, bytesBase64 = bytes }); return id;
         }
+        string StoreModel(UniformFbxModel source) {
+            var model = source.Clone(); model.dataId = AddPayload(model.bytesBase64); model.bytesBase64 = null;
+            string identity = JsonUtility.ToJson(model);
+            if (!modelIds.TryGetValue(identity, out string id)) {
+                id = ContentDigest(identity); modelIds.Add(identity, id); copy.sharedFbx.Add(new UniformMakerFbxEntry { id = id, model = model });
+            }
+            return id;
+        }
         foreach (var variant in variants) {
             var stored = variant.Copy(); stored.fbx = null; stored.fbxId = null;
             if (variant.fbx != null) {
@@ -70,6 +83,7 @@ public sealed partial class UniformMakerDocument
                 }
                 stored.fbxId = id;
             }
+            stored.partFbx = variant.partFbx.Select(part => new UniformMakerPartFbx { part = part.part, fbxId = StoreModel(part.model) }).ToList();
             stored.textures = variant.textures.Select(texture => {
                 var item = texture.Copy(); item.dataId = AddPayload(item.bytesBase64); item.bytesBase64 = null; return item;
             }).ToList();

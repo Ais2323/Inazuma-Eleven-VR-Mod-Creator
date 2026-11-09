@@ -15,10 +15,10 @@ public static partial class UniformMakerExporter
             var selection = id == 0 ? null : NativeUniformFashion.Resolve(NativeUniformFashion.ModelName(id), body);
             string mesh = id == 0 ? originalMesh : selection?.Number, texture = id == 0 ? originalTexture : selection?.NumberTexture;
             if (string.IsNullOrEmpty(mesh) || !UniformLabelAsset.HasPart(mesh, kind == UniformPartKind.Name)) return null;
-            var asset = UniformLabelAsset.Read(mesh, texture, rig); asset.RelativePath += "|" + kind;
+            var asset = UniformLabelAsset.Read(mesh, texture, rig, variant.partFbx.FirstOrDefault(p => p.part == kind)?.model, kind); asset.RelativePath += "|" + kind;
             for (int i = 0; i < asset.Textures.Count; i++) {
                 var original = asset.Textures[i];
-                var edit = variant.textures.SingleOrDefault(t => t.part == kind && t.originalName == original.Name);
+                var edit = variant.textures.SingleOrDefault(t => t.part == kind && t.MatchesName(original.Name));
                 if (edit == null) continue;
                 if (!converted.TryGetValue(TextureIdentity(edit), out var dds)) converted.Add(TextureIdentity(edit), dds = UniformTextureCodec.ToDds(edit));
                 var expected = G4Runtime.G4TextureParser.ParseDDS(original.Dds, original.Name); var actual = G4Runtime.G4TextureParser.ParseDDS(dds, edit.fileName);

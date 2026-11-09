@@ -152,5 +152,8 @@
     "UniformExportPortraitIcon": "匯出頭像隊服圖",
     "UniformUploadPortraitMask": "上傳皮膚遮罩",
     "UniformPortraitInheritCollar": "領口沿用一般",
-    "UniformPortraitInheritSleeve": "袖子沿用一般"
+    "UniformPortraitInheritSleeve": "袖子沿用一般",
+    "UniformImportPartFbx": "匯入此部位 FBX",
+    "UniformShareAwayModels": "客場共用主場模型",
+    "UniformShareBodyTextures": "套用貼圖到全部體型"
 }

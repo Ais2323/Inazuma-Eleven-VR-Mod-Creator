@@ -15,20 +15,48 @@ internal static class UniformFbxWriter
         var b = new G4ModelParser.Binary(metadata, "Uniform FBX template"); int bias = b.U16(10) * 4, names = bias + b.U16(0x84) * 4;
         return Enumerable.Range(0, b.U16(0x20)).Select(i => b.Text(names + b.U16(names + i * 2))).ToArray();
     }
+    internal static bool MatchesPart(G4ModelParser.Model model, int slot, UniformPartKind kind)
+    {
+        var part = model.Parts.FirstOrDefault(p => p.SourceMeshIndex == slot);
+        if (part == null) return false;
+        if (kind == UniformPartKind.Number || kind == UniformPartKind.Name) return UniformLabelAsset.IsName(part.Name) == (kind == UniformPartKind.Name);
+        if (kind != UniformPartKind.Upper && kind != UniformPartKind.Lower) return true;
+        bool lower = part.Name.Contains("_30") || model.Materials[part.Material].Name.EndsWith("_30M", StringComparison.OrdinalIgnoreCase);
+        return lower == (kind == UniformPartKind.Lower);
+    }
+
+    internal static Result Apply(byte[] metadata, byte[] geometry, UniformMakerVariant variant, UniformPartKind kind, G4Skeleton rig)
+    {
+        var result = new Result { Metadata = metadata, Geometry = geometry };
+        if (kind == UniformPartKind.Upper && variant.fbx != null) result = Build(metadata, geometry, variant.fbx, rig);
+        var kinds = kind == UniformPartKind.Upper ? new[] { UniformPartKind.Upper, UniformPartKind.Lower } : new[] { kind };
+        foreach (var part in kinds) {
+            var setting = variant.partFbx?.FirstOrDefault(p => p.part == part)?.model;
+            bool hidden = variant.IsHidden(part);
+            if (!hidden && setting == null) continue;
+            var parsed = G4ModelParser.Parse(result.Metadata, result.Geometry, "FBX part scope");
+            result = Build(result.Metadata, result.Geometry, hidden ? null : setting, rig, slot => MatchesPart(parsed, slot, part));
+        }
+        return result;
+    }
+
     static string BaseName(string name) => Regex.Replace(name, @"_LOD\d*$", "", RegexOptions.IgnoreCase);
     static void Put(byte[] bytes, int at, int value) => BitConverter.GetBytes(value).CopyTo(bytes, at);
     static void Put(byte[] bytes, int at, ushort value) => BitConverter.GetBytes(value).CopyTo(bytes, at);
     static void Bounds(byte[] bytes, int at, UnityEngine.Bounds bounds) { var p = bounds.min; var q = bounds.max; foreach (float value in new[] { p.x, p.y, -q.z, q.x, q.y, -p.z }) { BitConverter.GetBytes(value).CopyTo(bytes, at); at += 4; } }
 
-    internal static Result Build(byte[] metadata, byte[] geometry, UniformFbxModel settings, G4Skeleton rig)
+    internal static Result Build(byte[] metadata, byte[] geometry, UniformFbxModel settings, G4Skeleton rig, Func<int, bool> scope = null)
     {
-        settings.Validate(); var source = UniformFbxReader.Read(settings);
+        settings?.Validate(); var source = settings == null ? null : UniformFbxReader.Read(settings);
         var b = new G4ModelParser.Binary(metadata, "Uniform FBX template"); int count = b.U16(0x20), table = b.U16(4), cursor = table + count * 0x50;
         var names = Slots(metadata); var preview = G4ModelParser.Parse(metadata, geometry, "Uniform FBX template");
-        if (settings.meshSlots.Any(slot => slot >= count || !preview.Parts.Any(p => p.SourceMeshIndex == slot))) throw new InvalidDataException("FBX target mesh slot does not exist in this uniform.");
+        if (settings != null && settings.meshSlots.Any(slot => slot >= count || !preview.Parts.Any(p => p.SourceMeshIndex == slot))) throw new InvalidDataException("FBX target mesh slot does not exist in this uniform.");
         var layouts = new List<byte[]>();
         for (int i = 0; i < b.U8(0x26); i++) { int size = 8 + b.U8(cursor + 1) * 8; layouts.Add(metadata.Skip(cursor).Take(size).ToArray()); cursor += size; }
         var meshes = new List<RawMesh>(); var palette = new List<ushort>(); UnityEngine.Bounds overall = default; bool haveBounds = false;
+        if (scope != null) foreach (var part in preview.Parts) foreach (var point in part.Positions) {
+            if (!haveBounds) { overall = new UnityEngine.Bounds(point, Vector3.zero); haveBounds = true; } else overall.Encapsulate(point);
+        }
         var owner = new GameObject("FBX encoding buffers"); owner.hideFlags = HideFlags.HideAndDontSave;
         try {
             for (int i = 0; i < count; i++) {
@@ -36,6 +64,21 @@ internal static class UniformFbxWriter
                 if (stride == 0) stride = 0x44;
                 var raw = new RawMesh { Record = metadata.Skip(record).Take(0x50).ToArray(), Stride = stride, Layout = b.U8(record + 0x42), Vertices = geometry.Skip(b.Int(record)).Take(stride).ToArray() };
                 int slot = preview.Parts.FirstOrDefault(p => BaseName(p.Name) == BaseName(names[i]))?.SourceMeshIndex ?? i;
+                if (scope != null && !scope(slot)) {
+                    raw.VertexCount = b.Int(record + 8);
+                    raw.Vertices = geometry.Skip(b.Int(record)).Take(raw.VertexCount * stride).ToArray();
+                    raw.Indices = Enumerable.Range(0, b.Int(record + 12)).Select(j => BitConverter.ToUInt16(geometry, b.Int(0x5c) + b.Int(record + 4) + j * 2)).ToArray();
+                    int bias = b.U16(10) * 4, hashAt = bias + b.U16(0x74) * 4, paletteAt = bias + b.U16(0x82) * 4;
+                    int start = b.U16(record + 0x3a), size = (b.U16(record + 0x3c) & 0x100) != 0 ? b.U8(record + 0x3c) : 0;
+                    Put(raw.Record, 0x3a, checked((ushort)palette.Count));
+                    for (int j = 0; j < size; j++) palette.Add(checked((ushort)rig.ByHash[b.U32(hashAt + b.U16(paletteAt + (start + j) * 2) * 4)]));
+                    meshes.Add(raw); continue;
+                }
+                if (source == null) {
+                    raw.Vertices = Array.Empty<byte>(); raw.Indices = Array.Empty<ushort>(); raw.VertexCount = 0;
+                    Put(raw.Record, 0x3a, (ushort)0); Put(raw.Record, 0x3c, (ushort)0); Array.Clear(raw.Record, 0x10, 24);
+                    meshes.Add(raw); continue;
+                }
                 source.BindMesh(settings, rig, slot, out var mesh, out var hashes, out var weights);
                 try {
                     var skin = owner.AddComponent<AvatarMeshSkin>(); skin.Hashes = hashes; skin.Weights = weights;
@@ -47,7 +90,7 @@ internal static class UniformFbxWriter
                     meshes.Add(raw);
                 } finally { if (Application.isPlaying) UnityEngine.Object.Destroy(mesh); else UnityEngine.Object.DestroyImmediate(mesh); }
             }
-            if (!haveBounds) throw new InvalidDataException("FBX has no bound geometry.");
+            if (!haveBounds && scope == null && source != null) throw new InvalidDataException("FBX has no bound geometry.");
             byte[] md = (byte[])metadata.Clone();
             byte[] PackUInt(IEnumerable<uint> values) { using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream); foreach (uint v in values) writer.Write(v); return stream.ToArray(); }
             byte[] PackShort(IEnumerable<ushort> values) { using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream); foreach (ushort v in values) writer.Write(v); return stream.ToArray(); }
@@ -61,8 +104,8 @@ internal static class UniformFbxWriter
                 Put(md, 0x50, vertexSize); Put(md, 0x54, (int)stream.Position - vertexSize); Put(md, 0x5c, vertexSize); RawTexture.Pad(writer, 16); mg = stream.ToArray();
             }
             for (int i = 0; i < count; i++) Buffer.BlockCopy(meshes[i].Record, 0, md, table + i * 0x50, 0x50);
-            Bounds(md, 0x30, overall); var check = G4ModelParser.Parse(md, mg, "FBX uniform readback");
-            if (check.Parts.Sum(p => p.Indices.Length) != source.Parts.Sum(p => p.Positions.Length)) throw new InvalidDataException("FBX triangle readback mismatch.");
+            if (haveBounds) Bounds(md, 0x30, overall); var check = G4ModelParser.Parse(md, mg, "FBX uniform readback");
+            if (scope == null && source != null && check.Parts.Sum(p => p.Indices.Length) != source.Parts.Sum(p => p.Positions.Length)) throw new InvalidDataException("FBX triangle readback mismatch.");
             return new Result { Metadata = md, Geometry = mg };
         }
         finally { if (Application.isPlaying) UnityEngine.Object.Destroy(owner); else UnityEngine.Object.DestroyImmediate(owner); }

@@ -13,7 +13,7 @@ public sealed partial class UniformMakerDocument
     public int version = 1;
     public uint targetUniformId;
     public string targetKey;
-    public bool isNewUniform, freeInShop;
+    public bool isNewUniform, freeInShop, shareAwayModels;
     public uint templateUniformId;
     public string newUniformKey, uniformName;
     public List<UniformLocalizedName> names = new();
@@ -23,6 +23,23 @@ public sealed partial class UniformMakerDocument
     public int gender;
     public Color skinColor;
     public List<UniformMakerVariant> variants = new();
+
+    internal IEnumerable<UniformMakerVariant> EffectiveVariants()
+    {
+        foreach (var original in variants) {
+            if (!shareAwayModels || original.side == 0) { yield return original; continue; }
+            var home = variants.FirstOrDefault(v => v.side == 0 && v.role == original.role && v.bodyAttribute == original.bodyAttribute)
+                ?? variants.FirstOrDefault(v => v.side == 0 && v.role == original.role && v.bodyAttribute == -1);
+            if (home == null) { yield return original; continue; }
+            var item = home.Copy(); item.side = 1; item.textures = original.textures;
+            item.portraitIcons = original.portraitIcons; item.inheritPortraitCollar = original.inheritPortraitCollar; item.inheritPortraitSleeve = original.inheritPortraitSleeve;
+            yield return item;
+        }
+        if (!shareAwayModels) yield break;
+        foreach (var home in variants.Where(v => v.side == 0 && !variants.Any(a => a.side == 1 && a.role == v.role && a.bodyAttribute == v.bodyAttribute))) {
+            var item = home.Copy(); item.side = 1; item.textures = new List<UniformMakerTexture>(); item.portraitIcons = new List<UniformMakerPortrait>(); yield return item;
+        }
+    }
 
     public static UniformMakerDocument Read(string path)
     {
@@ -64,6 +81,13 @@ public sealed partial class UniformMakerDocument
             if (variant.fbx != null) {
                 variant.fbx.bytesBase64 = Intern(variant.fbx.bytesBase64);
                 if (variant.bodyAttribute < 0) throw new InvalidDataException("FBX requires a body-specific variant."); variant.fbx.Validate(validatedPayloads);
+            }
+            variant.partFbx ??= new List<UniformMakerPartFbx>();
+            var fbxParts = new HashSet<UniformPartKind>();
+            foreach (var part in variant.partFbx) {
+                if (part == null || !Enum.IsDefined(typeof(UniformPartKind), part.part) || !fbxParts.Add(part.part) || part.model == null || variant.bodyAttribute < 0)
+                    throw new InvalidDataException("Invalid part FBX binding.");
+                part.model.bytesBase64 = Intern(part.model.bytesBase64); part.model.Validate(validatedPayloads);
             }
             var channels = new HashSet<string>();
             var portraitKeys = new HashSet<string>();
@@ -116,7 +140,8 @@ public sealed class UniformMakerVariant
     public uint clothesModelId, armbandModelId, gloveModelId;
     public uint skinModelId, numberModelId;
     public uint nameModelId;
-    public bool hideName, labelsConfigured;
+    public bool hideName, labelsConfigured, hideUpper, hideLower;
+    public List<UniformMakerPartFbx> partFbx = new();
     public uint NameModelId => labelsConfigured ? nameModelId : numberModelId;
     public bool hideSkin, hideNumber, hideArmband, hideGloves, accessoriesConfigured;
     public UniformFbxModel fbx;
@@ -128,9 +153,9 @@ public sealed class UniformMakerVariant
     public int PortraitCollar(int value) => inheritPortraitCollar ? 0 : value;
     public int PortraitSleeve(int value) => inheritPortraitSleeve ? 0 : value;
     public bool IsHidden(UniformPartKind kind) => (fbx != null && !fbx.IsEmpty && !accessoriesConfigured && kind != UniformPartKind.Upper && kind != UniformPartKind.Lower) ||
-        (kind == UniformPartKind.Skin ? hideSkin : kind == UniformPartKind.Number ? hideNumber : kind == UniformPartKind.Name ? (labelsConfigured ? hideName : hideNumber) : kind == UniformPartKind.Armband ? hideArmband : kind == UniformPartKind.Gloves && hideGloves);
+        (kind == UniformPartKind.Upper ? hideUpper : kind == UniformPartKind.Lower ? hideLower : kind == UniformPartKind.Skin ? hideSkin : kind == UniformPartKind.Number ? hideNumber : kind == UniformPartKind.Name ? (labelsConfigured ? hideName : hideNumber) : kind == UniformPartKind.Armband ? hideArmband : kind == UniformPartKind.Gloves && hideGloves);
     public bool HasChanges => clothesModelId != 0 || armbandModelId != 0 || gloveModelId != 0 || skinModelId != 0 || numberModelId != 0 ||
-        hideSkin || hideNumber || hideArmband || hideGloves || hideName || nameModelId != 0 || textures.Count > 0 ||
+        hideUpper || hideLower || partFbx.Count > 0 || hideSkin || hideNumber || hideArmband || hideGloves || hideName || nameModelId != 0 || textures.Count > 0 ||
         inheritPortraitCollar || inheritPortraitSleeve || (portraitIcons?.Count ?? 0) > 0 || (fbx != null && !fbx.IsEmpty);
 }
 
@@ -148,6 +173,12 @@ public sealed class UniformMakerTexture
     public UniformPartKind part;
     public int channel, width, height, mipCount;
     public string originalName, fileName, extension, bytesBase64;
+    public bool sharedAcrossBodies;
+    internal static string TextureSuffix(string name) { int at = (name ?? "").IndexOf('_'); return at < 0 ? name : name.Substring(at); }
+    internal bool MatchesName(string name) => originalName == name || sharedAcrossBodies && TextureSuffix(originalName) == TextureSuffix(name);
     public string dataId;
     internal UniformMakerTexture Copy() => (UniformMakerTexture)MemberwiseClone();
 }
+
+[Serializable]
+public sealed class UniformMakerPartFbx { public UniformPartKind part; public UniformFbxModel model; public string fbxId; }

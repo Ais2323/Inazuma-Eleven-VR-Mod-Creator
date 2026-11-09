@@ -12,7 +12,7 @@ public sealed partial class UniformMakerController
     }
     uint PartOverride(UniformPartKind kind)
     {
-        var edit = CurrentEdit;
+        var edit = ModelEdit;
         if (edit == null) return 0;
         return kind == UniformPartKind.Name ? edit.Name : kind == UniformPartKind.Skin ? edit.Skin : kind == UniformPartKind.Number ? edit.Number :
             kind == UniformPartKind.Armband ? edit.Armband : kind == UniformPartKind.Gloves ? edit.Gloves : edit.Clothes;
@@ -20,8 +20,8 @@ public sealed partial class UniformMakerController
 
     bool PartHidden(UniformPartKind kind)
     {
-        var edit = CurrentEdit;
-        return edit != null && (kind == UniformPartKind.Name ? edit.HideName : kind == UniformPartKind.Skin ? edit.HideSkin : kind == UniformPartKind.Number ? edit.HideNumber :
+        var edit = ModelEdit;
+        return edit != null && (kind == UniformPartKind.Upper ? edit.HideUpper : kind == UniformPartKind.Lower ? edit.HideLower : kind == UniformPartKind.Name ? edit.HideName : kind == UniformPartKind.Skin ? edit.HideSkin : kind == UniformPartKind.Number ? edit.HideNumber :
             kind == UniformPartKind.Armband ? edit.HideArmband : kind == UniformPartKind.Gloves && edit.HideGloves);
     }
 
@@ -34,9 +34,14 @@ public sealed partial class UniformMakerController
 
     internal void SetAccessory(UniformPartKind kind, uint id, bool hidden)
     {
-        var edit = CurrentEdit; if (edit == null) return;
+        var edit = ModelEdit; if (edit == null) return;
         if (hidden) id = 0;
-        if (kind == UniformPartKind.Skin) { edit.Skin = id; edit.HideSkin = hidden; }
+        edit.PartFbx.Remove(kind);
+        if (kind == UniformPartKind.Upper || kind == UniformPartKind.Lower) {
+            if (kind == UniformPartKind.Upper) edit.HideUpper = hidden; else edit.HideLower = hidden;
+            if (!hidden) edit.Fbx = null;
+        }
+        else if (kind == UniformPartKind.Skin) { edit.Skin = id; edit.HideSkin = hidden; }
         else if (kind == UniformPartKind.Number) { edit.Number = id; edit.HideNumber = hidden; }
         else if (kind == UniformPartKind.Name) { edit.Name = id; edit.HideName = hidden; }
         else if (kind == UniformPartKind.Armband) { edit.Armband = id; edit.HideArmband = hidden; }
