@@ -49,7 +49,7 @@ public sealed partial class UniformMakerController
         var output = new Dictionary<string, byte[]>();
         foreach (var texture in textures)
         {
-            var edit = saved?.FirstOrDefault(t => t.part == kind && t.originalName == texture.Name);
+            var edit = kind == UniformPartKind.Name ? null : saved?.FirstOrDefault(t => t.part == kind && t.originalName == texture.Name);
             byte[] dds = edit == null ? texture.Dds : UniformTextureCodec.ToDds(edit);
             string name = Path.GetFileName(texture.Name);
             output.Add(name + ".dds", dds);

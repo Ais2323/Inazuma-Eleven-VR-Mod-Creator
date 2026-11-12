@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using G4Composition;
 using UnityEngine;
 using UnityEngine.UI;
@@ -15,19 +16,30 @@ public sealed partial class UniformMakerController
     public void OnClickShareBodyTextures()
     {
         if (CurrentEdit == null) return;
+        UpdateNameColor();
         var source = CurrentEdit;
-        foreach (var texture in source.Textures.Values) texture.SharedAcrossBodies = true;
+        var editable = source.Textures.Where(p => !p.Key.StartsWith("Name/", StringComparison.Ordinal)).ToArray();
+        bool shareNameColor = CanEditNameColor;
+        if (editable.Length == 0 && !shareNameColor) return;
+        foreach (var texture in editable) texture.Value.SharedAcrossBodies = true;
         for (int attribute = 0; attribute < 18; attribute++) {
-            if (catalog.BodyByAttribute(attribute) == null) continue;
+            var body = catalog.BodyByAttribute(attribute);
+            if (body == null || body.Int(4) != attribute || !NativeBodyTypes.AllowsGender(body, gender)) continue;
             string key = catalog.Entries[selected].Id + "/" + side + "/" + role + "/" + attribute;
             if (!kitEdits.TryGetValue(key, out var target)) kitEdits.Add(key, target = new KitEdit());
             if (ReferenceEquals(source, target)) continue;
-            foreach (var old in target.Textures.Values) old.Release();
-            target.Textures.Clear();
-            foreach (var texture in source.Textures) target.Textures.Add(texture.Key, texture.Value.Copy());
+            if (shareNameColor) {
+                target.HasNameColor = source.HasNameColor; target.NameColor = source.NameColor;
+            }
+            if (editable.Length > 0) {
+                foreach (var old in target.Textures.Keys.Where(k => !k.StartsWith("Name/", StringComparison.Ordinal)).ToArray()) {
+                    target.Textures[old].Release(); target.Textures.Remove(old);
+                }
+                foreach (var texture in editable) target.Textures.Add(texture.Key, texture.Value.Copy());
+            }
         }
         RefreshButtons();
-        Debug.Log("[UniformMaker] Applied current kit textures to all body types.", this);
+        Debug.Log("[UniformMaker] Applied current kit textures and enabled name color to all body types of gender " + gender + ".", this);
     }
 
     readonly List<Button> bodyButtons = new(), collarButtons = new(), sleeveButtons = new(), hemButtons = new(), chestButtons = new();

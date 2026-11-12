@@ -18,7 +18,7 @@ public static partial class UniformMakerExporter
             var asset = UniformLabelAsset.Read(mesh, texture, rig, variant.partFbx.FirstOrDefault(p => p.part == kind)?.model, kind); asset.RelativePath += "|" + kind;
             for (int i = 0; i < asset.Textures.Count; i++) {
                 var original = asset.Textures[i];
-                var edit = variant.textures.SingleOrDefault(t => t.part == kind && t.MatchesName(original.Name));
+                var edit = kind == UniformPartKind.Name ? null : variant.textures.SingleOrDefault(t => t.part == kind && t.MatchesName(original.Name));
                 if (edit == null) continue;
                 if (!converted.TryGetValue(TextureIdentity(edit), out var dds)) converted.Add(TextureIdentity(edit), dds = UniformTextureCodec.ToDds(edit));
                 var expected = G4Runtime.G4TextureParser.ParseDDS(original.Dds, original.Name); var actual = G4Runtime.G4TextureParser.ParseDDS(dds, edit.fileName);
@@ -34,6 +34,16 @@ public static partial class UniformMakerExporter
         string folder = "_uniform/um_" + Digest(key + "|labels"), stem = Path.GetFileName(originalMesh ?? (number ?? name).ModelPath);
         string model = folder + "/" + stem, texturePath = folder + "/labels.g4tx";
         pending.Add("common/chr/" + model, result.Metadata); pending.Add("common/chr/" + Path.ChangeExtension(model, ".g4mg"), result.Geometry);
-        pending.Add("dx11/chr/" + texturePath, result.Textures); return new[] { model, texturePath };
+        // Name glyphs are generated from the retail shared atlas. Keep the
+        // original number/name container reference when it already supplies all
+        // material textures; a private labels container is needed only for edits.
+        var outputTextures = RawTexture.Read(result.Textures, "Uniform labels");
+        var nativeTexture = new[] { number, name }.Where(asset => asset != null)
+            .Select(asset => new { Asset = asset, Textures = RawTexture.Read(asset.TextureContainer, asset.TexturePath) })
+            .FirstOrDefault(candidate => outputTextures.All(texture => candidate.Textures.Any(original => original.Hash == texture.Hash &&
+                original.Name == texture.Name && SameTexturePayload(original, texture))))?.Asset;
+        if (nativeTexture != null) texturePath = nativeTexture.TexturePath.Substring(Path.Combine(DumpDataManager.Dx11Path, "chr").TrimEnd('\\', '/').Length + 1).Replace('\\', '/');
+        else pending.Add("dx11/chr/" + texturePath, result.Textures);
+        return new[] { model, texturePath };
     }
 }

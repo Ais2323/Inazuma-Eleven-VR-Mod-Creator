@@ -32,12 +32,13 @@ public sealed partial class UniformMakerDocument
                 ?? variants.FirstOrDefault(v => v.side == 0 && v.role == original.role && v.bodyAttribute == -1);
             if (home == null) { yield return original; continue; }
             var item = home.Copy(); item.side = 1; item.textures = original.textures;
+            item.hasNameColor = original.hasNameColor; item.nameColor = original.nameColor;
             item.portraitIcons = original.portraitIcons; item.inheritPortraitCollar = original.inheritPortraitCollar; item.inheritPortraitSleeve = original.inheritPortraitSleeve;
             yield return item;
         }
         if (!shareAwayModels) yield break;
         foreach (var home in variants.Where(v => v.side == 0 && !variants.Any(a => a.side == 1 && a.role == v.role && a.bodyAttribute == v.bodyAttribute))) {
-            var item = home.Copy(); item.side = 1; item.textures = new List<UniformMakerTexture>(); item.portraitIcons = new List<UniformMakerPortrait>(); yield return item;
+            var item = home.Copy(); item.side = 1; item.hasNameColor = false; item.textures = new List<UniformMakerTexture>(); item.portraitIcons = new List<UniformMakerPortrait>(); yield return item;
         }
     }
 
@@ -75,6 +76,8 @@ public sealed partial class UniformMakerDocument
         }
         foreach (var variant in variants)
         {
+            if (variant != null && variant.hasNameColor && new[] { variant.nameColor.r, variant.nameColor.g, variant.nameColor.b, variant.nameColor.a }
+                .Any(v => float.IsNaN(v) || float.IsInfinity(v) || v < 0 || v > 1)) throw new InvalidDataException("Invalid uniform name color.");
             if (variant == null || variant.side < 0 || variant.side > 1 || variant.role < 0 || variant.role > 1 || variant.bodyAttribute < -1 || variant.bodyAttribute > 17 || !keys.Add(variant.side + "/" + variant.role + "/" + variant.bodyAttribute) || variant.textures == null)
                 throw new InvalidDataException("Duplicate or invalid uniform variant.");
             if (variant.fbx?.IsEmpty == true) variant.fbx = null;
@@ -141,6 +144,8 @@ public sealed class UniformMakerVariant
     public uint skinModelId, numberModelId;
     public uint nameModelId;
     public bool hideName, labelsConfigured, hideUpper, hideLower;
+    public bool hasNameColor;
+    public Color nameColor = Color.black;
     public List<UniformMakerPartFbx> partFbx = new();
     public uint NameModelId => labelsConfigured ? nameModelId : numberModelId;
     public bool hideSkin, hideNumber, hideArmband, hideGloves, accessoriesConfigured;
@@ -155,8 +160,10 @@ public sealed class UniformMakerVariant
     public bool IsHidden(UniformPartKind kind) => (fbx != null && !fbx.IsEmpty && !accessoriesConfigured && kind != UniformPartKind.Upper && kind != UniformPartKind.Lower) ||
         (kind == UniformPartKind.Upper ? hideUpper : kind == UniformPartKind.Lower ? hideLower : kind == UniformPartKind.Skin ? hideSkin : kind == UniformPartKind.Number ? hideNumber : kind == UniformPartKind.Name ? (labelsConfigured ? hideName : hideNumber) : kind == UniformPartKind.Armband ? hideArmband : kind == UniformPartKind.Gloves && hideGloves);
     public bool HasChanges => clothesModelId != 0 || armbandModelId != 0 || gloveModelId != 0 || skinModelId != 0 || numberModelId != 0 ||
-        hideUpper || hideLower || partFbx.Count > 0 || hideSkin || hideNumber || hideArmband || hideGloves || hideName || nameModelId != 0 || textures.Count > 0 ||
+        hideUpper || hideLower || partFbx.Count > 0 || hideSkin || hideNumber || hideArmband || hideGloves || hideName || nameModelId != 0 || textures.Count > 0 || hasNameColor ||
         inheritPortraitCollar || inheritPortraitSleeve || (portraitIcons?.Count ?? 0) > 0 || (fbx != null && !fbx.IsEmpty);
+    internal bool HasModelChanges => clothesModelId != 0 || armbandModelId != 0 || gloveModelId != 0 || skinModelId != 0 || numberModelId != 0 || nameModelId != 0 ||
+        hideUpper || hideLower || hideSkin || hideNumber || hideArmband || hideGloves || hideName || partFbx.Count > 0 || (fbx != null && !fbx.IsEmpty);
 }
 
 [Serializable]

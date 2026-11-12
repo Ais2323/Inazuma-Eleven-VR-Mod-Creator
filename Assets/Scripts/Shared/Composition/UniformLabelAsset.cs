@@ -12,6 +12,11 @@ namespace G4Composition
     internal static class UniformLabelAsset
     {
         static readonly Dictionary<string, string[]> meshNames = new();
+        internal static UnityEngine.Color DecodeColor(uint rgba) => new UnityEngine.Color32((byte)(rgba >> 24), (byte)(rgba >> 16), (byte)(rgba >> 8), (byte)rgba);
+        internal static uint EncodeColor(UnityEngine.Color color) {
+            UnityEngine.Color32 rgba = color;
+            return ((uint)rgba.r << 24) | ((uint)rgba.g << 16) | ((uint)rgba.b << 8) | rgba.a;
+        }
         internal static bool IsName(string name) => name.StartsWith("name_", StringComparison.OrdinalIgnoreCase);
         internal static bool HasPart(string mesh, bool name)
         {

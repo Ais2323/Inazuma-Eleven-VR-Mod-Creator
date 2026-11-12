@@ -7,6 +7,9 @@ Shader "G4/HeadPreview"
         _SpmTex ("SPM highlight texture", 2D) = "black" {}
         _MskTex ("Skin color mask", 2D) = "black" {}
         _Color ("Tint", Color) = (1,1,1,1)
+        _UniformLabelColors ("Use uniform lettering colors", Float) = 0
+        _LabelPrimaryColor ("Lettering primary color", Color) = (0,0,0,1)
+        _LabelSecondaryColor ("Lettering secondary color", Color) = (1,1,1,1)
         _HairColor ("Hair color", Color) = (1,1,1,1)
         _RecolorWhite ("Recolor white base pixels", Float) = 0
         _SkinColor ("Skin color", Color) = (1,1,1,1)
@@ -33,6 +36,8 @@ Shader "G4/HeadPreview"
             #include "UnityCG.cginc"
             sampler2D _MainTex, _OcTex, _SpmTex, _MskTex;
             float4 _MainTex_ST, _Color, _SkinColor, _HairColor, _DetailUvST;
+            float4 _LabelPrimaryColor, _LabelSecondaryColor;
+            float _UniformLabelColors;
             float _Cutoff, _OcDarkness, _OcUseGreen, _SpmStrength, _HasMsk, _WholeSkin, _RecolorWhite;
             struct Input { float4 vertex : POSITION; float2 uv : TEXCOORD0; };
             struct Output { float4 position : SV_POSITION; float2 uv : TEXCOORD0; };
@@ -54,6 +59,10 @@ Shader "G4/HeadPreview"
                 fixed3 oc = tex2D(_OcTex, detailUV).rgb;
                 fixed3 spm = tex2D(_SpmTex, detailUV).rgb;
                 fixed3 msk = tex2D(_MskTex, i.uv).rgb;
+                if (_UniformLabelColors > 0.5) {
+                    color.rgb *= lerp(fixed3(1,1,1), _LabelPrimaryColor.rgb, msk.g);
+                    color.rgb *= lerp(fixed3(1,1,1), _LabelSecondaryColor.rgb, msk.b);
+                }
                 float pureRed = step(0.999, msk.r) * step(msk.g, 0.001) * step(msk.b, 0.001) * step(0.5, _HasMsk);
                 color.rgb = lerp(color.rgb, _SkinColor.rgb, max(pureRed, step(0.5, _WholeSkin)));
                 float ocMask = saturate(lerp(max(oc.r, oc.g), oc.g, _OcUseGreen));

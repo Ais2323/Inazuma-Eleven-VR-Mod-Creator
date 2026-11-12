@@ -46,6 +46,8 @@ public sealed partial class UniformMakerController
         internal uint Clothes, Armband, Gloves;
         internal uint Skin, Number, Name;
         internal bool HideSkin, HideNumber, HideArmband, HideGloves, HideName;
+        internal bool HasNameColor;
+        internal Color NameColor = Color.black;
         internal bool InheritPortraitCollar, InheritPortraitSleeve;
         internal bool HideUpper, HideLower;
         internal readonly Dictionary<UniformPartKind, UniformFbxModel> PartFbx = new();
@@ -102,6 +104,7 @@ public sealed partial class UniformMakerController
         edit.InheritPortraitCollar = legacy?.InheritPortraitCollar ?? false;
         edit.InheritPortraitSleeve = legacy?.InheritPortraitSleeve ?? false;
         edit.Name = legacy?.Name ?? 0; edit.HideName = legacy?.HideName ?? false;
+        edit.HasNameColor = legacy?.HasNameColor ?? false; edit.NameColor = legacy?.NameColor ?? Color.black;
         edit.Skin = legacy?.Skin ?? 0; edit.Number = legacy?.Number ?? 0;
         edit.HideSkin = legacy?.HideSkin ?? false; edit.HideNumber = legacy?.HideNumber ?? false;
         edit.HideArmband = legacy?.HideArmband ?? false; edit.HideGloves = legacy?.HideGloves ?? false;
@@ -137,7 +140,7 @@ public sealed partial class UniformMakerController
                 var button = root.Find(TextureControls[channel])?.GetComponent<Button>();
                 controls.Buttons[channel] = button;
                 controls.Images[channel] = root.Find(TextureControls[channel] + "/RawImage")?.GetComponent<RawImage>();
-                if (button != null) button.onClick.AddListener(() => ImportPartTexture(kind, captured));
+                if (button != null && kind != UniformPartKind.Name) button.onClick.AddListener(() => ImportPartTexture(kind, captured));
             }
         }
         foreach (Transform child in modelButtons)
@@ -308,6 +311,7 @@ public sealed partial class UniformMakerController
             }
             RefreshMaterialRows(kind, controls);
         }
+        RefreshNameColor();
     }
 
     static void SetTextureImage(RawImage image, Texture texture)
@@ -332,7 +336,7 @@ public sealed partial class UniformMakerController
 
     void ImportPartTexture(UniformPartKind kind, int channel, string name = null)
     {
-        if (CurrentTexture(kind, channel, name) == null) return;
+        if (kind == UniformPartKind.Name || CurrentTexture(kind, channel, name) == null) return;
         var paths = StandaloneFileBrowser.OpenFilePanel("Select DDS or PNG", "", new[] { new ExtensionFilter("Texture", "dds", "png") }, false);
         if (paths == null || paths.Length == 0 || string.IsNullOrEmpty(paths[0])) return;
         try { LoadPartTexture(kind, channel, paths[0], name); }
@@ -341,6 +345,7 @@ public sealed partial class UniformMakerController
 
     internal void LoadPartTexture(UniformPartKind kind, int channel, string path, string name = null)
     {
+        if (kind == UniformPartKind.Name) throw new InvalidOperationException(LocalizationManager.GetText("UniformNameFontUnsupported"));
         var original = CurrentTexture(kind, channel, name);
         if (original == null || CurrentEdit == null) throw new InvalidOperationException("No texture selected.");
         byte[] bytes = File.ReadAllBytes(path);
@@ -367,7 +372,9 @@ public sealed partial class UniformMakerController
         foreach (var pair in CurrentEdit.Textures)
         {
             var key = pair.Key.Split('/');
-            var kind = (UniformPartKind)Enum.Parse(typeof(UniformPartKind), key[0]); int channel = int.Parse(key[1]); var edit = pair.Value;
+            var kind = (UniformPartKind)Enum.Parse(typeof(UniformPartKind), key[0]);
+            if (kind == UniformPartKind.Name) continue;
+            int channel = int.Parse(key[1]); var edit = pair.Value;
                     foreach (var renderer in PartRenderers(kind))
                     {
                         var material = renderer.sharedMaterial;
@@ -399,4 +406,62 @@ public sealed partial class UniformMakerController
     }
     static void DestroyAsset(UnityEngine.Object value)
     { if (value == null) return; if (Application.isPlaying) Destroy(value); else DestroyImmediate(value); }
+
+    public Button nameColorButton, nameColorResetButton;
+    public Image nameColorImage;
+    public ColorPicker nameColorPicker;
+    Color displayedNameColor;
+    bool CanEditNameColor => selected >= 0 && nameModel != null && !PartHidden(UniformPartKind.Name);
+
+    void InitializeNameColor()
+    {
+        if (nameColorButton != null) nameColorButton.onClick.AddListener(() => {
+            if (!CanEditNameColor || nameColorPicker == null) return;
+            nameColorPicker.BindImage = nameColorImage;
+            nameColorPicker.gameObject.SetActive(true); nameColorPicker.SetColor(nameColorImage.color);
+            nameColorPicker.transform.SetAsLastSibling();
+        });
+        if (nameColorResetButton != null) nameColorResetButton.onClick.AddListener(() => {
+            if (!CanEditNameColor) return;
+            CurrentEdit.HasNameColor = false; RefreshNameColor(); ApplyNameColorPreview();
+        });
+    }
+
+    CfgTable.Row CurrentLabelColors()
+    {
+        if (catalog == null || selected < 0) return null;
+        var outfit = GetSelection(side, role);
+        var selection = ResolveAccessory(UniformPartKind.Number, outfit) ?? outfit;
+        return selection == null ? null : NativeUniformFashion.ColorRow(selection.ColorId);
+    }
+
+    void RefreshNameColor()
+    {
+        if (nameColorButton != null) nameColorButton.interactable = CanEditNameColor;
+        if (nameColorResetButton != null) nameColorResetButton.interactable = CanEditNameColor && CurrentEdit?.HasNameColor == true;
+        if (nameColorPicker != null) nameColorPicker.gameObject.SetActive(false);
+        displayedNameColor = CurrentEdit?.HasNameColor == true ? CurrentEdit.NameColor :
+            UniformLabelAsset.DecodeColor(CurrentLabelColors()?.UInt(1) ?? 0x000000ff);
+        if (nameColorImage != null) nameColorImage.color = displayedNameColor;
+    }
+
+    void UpdateNameColor()
+    {
+        if (!CanEditNameColor || nameColorImage == null || nameColorImage.color == displayedNameColor) return;
+        displayedNameColor = nameColorImage.color;
+        CurrentEdit.HasNameColor = true; CurrentEdit.NameColor = displayedNameColor;
+        if (nameColorResetButton != null) nameColorResetButton.interactable = true;
+        ApplyNameColorPreview();
+    }
+
+    void ApplyNameColorPreview()
+    {
+        var colors = CurrentLabelColors();
+        var primary = CanEditNameColor && CurrentEdit?.HasNameColor == true ? CurrentEdit.NameColor : UniformLabelAsset.DecodeColor(colors?.UInt(1) ?? 0x000000ff);
+        var secondary = UniformLabelAsset.DecodeColor(colors?.UInt(2) ?? 0xffffffff);
+        foreach (var renderer in PartRenderers(UniformPartKind.Name).Concat(PartRenderers(UniformPartKind.Number))) {
+            var material = renderer.sharedMaterial;
+            material.SetFloat("_UniformLabelColors", 1); material.SetColor("_LabelPrimaryColor", primary); material.SetColor("_LabelSecondaryColor", secondary);
+        }
+    }
 }

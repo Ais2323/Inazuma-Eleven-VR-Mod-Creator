@@ -38,6 +38,7 @@ public sealed partial class UniformMakerController
 
     internal UniformMakerDocument CreateDocument()
     {
+        UpdateNameColor();
         if (catalog == null || selected < 0) throw new InvalidOperationException("Select a uniform first.");
         var entry = catalog.Entries[selected];
         var doc = new UniformMakerDocument { targetUniformId = isNewUniform ? 0 : entry.Id, targetKey = entry.Key,
@@ -53,6 +54,7 @@ public sealed partial class UniformMakerController
             string[] key = pair.Key.Split('/'); var edit = pair.Value;
             var variant = new UniformMakerVariant { side = int.Parse(key[1]), role = int.Parse(key[2]), bodyAttribute = key.Length > 3 ? int.Parse(key[3]) : -1,
                 clothesModelId = edit.Clothes, armbandModelId = edit.Armband, gloveModelId = edit.Gloves, skinModelId = edit.Skin, numberModelId = edit.Number, nameModelId = edit.Name, hideName = edit.HideName, labelsConfigured = true,
+                hasNameColor = edit.HasNameColor, nameColor = edit.NameColor,
                 hideSkin = edit.HideSkin, hideNumber = edit.HideNumber, hideArmband = edit.HideArmband, hideGloves = edit.HideGloves,
                 inheritPortraitCollar = edit.InheritPortraitCollar, inheritPortraitSleeve = edit.InheritPortraitSleeve,
                 hideUpper = edit.HideUpper, hideLower = edit.HideLower,
@@ -95,6 +97,7 @@ public sealed partial class UniformMakerController
                 edit.HideUpper = variant.hideUpper; edit.HideLower = variant.hideLower;
                 foreach (var part in variant.partFbx) edit.PartFbx.Add(part.part, part.model.Clone());
                 edit.Name = variant.NameModelId; edit.HideName = variant.IsHidden(UniformPartKind.Name);
+                edit.HasNameColor = variant.hasNameColor; edit.NameColor = variant.nameColor;
                 edit.Skin = variant.skinModelId; edit.Number = variant.numberModelId;
                 edit.HideSkin = variant.IsHidden(UniformPartKind.Skin); edit.HideNumber = variant.IsHidden(UniformPartKind.Number);
                 edit.HideArmband = variant.IsHidden(UniformPartKind.Armband); edit.HideGloves = variant.IsHidden(UniformPartKind.Gloves);

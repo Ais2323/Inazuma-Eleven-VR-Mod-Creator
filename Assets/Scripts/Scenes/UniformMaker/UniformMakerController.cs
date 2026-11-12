@@ -43,6 +43,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
             });
         }
         InitializePartControls();
+        InitializeNameColor();
         InitializeFbxControls();
         InitializePersistence();
         InitializeInfo();
@@ -83,6 +84,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
     void Update()
     {
         UpdateSkinColor();
+        UpdateNameColor();
         if (model != null && appliedNumber != Mathf.Clamp(uniformNumber, 0, 99)) ApplyNumber();
         if (catalog == null || locale == UniformCatalog.Locale) return;
         locale = UniformCatalog.Locale;
@@ -238,6 +240,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
                 }
             }
             ApplyPartTextures();
+            ApplyNameColorPreview();
             var renderers = model.GetComponentsInChildren<Renderer>();
             if (renderers.Length == 0) return;
             Bounds bounds = renderers[0].bounds;

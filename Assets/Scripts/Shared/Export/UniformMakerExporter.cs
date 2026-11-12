@@ -13,6 +13,8 @@ public static partial class UniformMakerExporter
         if (!DumpDataManager.ValidateSavedPath()) throw new InvalidDataException(DumpDataManager.LastError);
         var docs = source.ToArray();
         foreach (var doc in docs) doc.Validate();
+        foreach (var doc in docs.Where(d => d.variants.Any(v => v.textures.Any(t => t.part == UniformPartKind.Name))))
+            UnityEngine.Debug.LogWarning(string.Format(LocalizationManager.GetText("UniformNameFontEditsIgnored"), doc.uniformName ?? doc.targetKey));
         if (docs.Where(d => !d.isNewUniform).GroupBy(d => d.targetUniformId).Any(g => g.Count() > 1) ||
             docs.Where(d => d.isNewUniform).GroupBy(d => d.newUniformKey).Any(g => g.Count() > 1))
             throw new InvalidDataException("More than one save targets the same uniform.");
@@ -30,7 +32,7 @@ public static partial class UniformMakerExporter
         var catalog = new UniformCatalog();
         var nativeRows = CfgTable.Read(File.ReadAllBytes(nativeParts), nativeParts);
         var nativeColorIds = new HashSet<uint>(nativeRows.Rows.Where(r => r.Name == "CHARA_PARTS_COLOR").Select(r => r.UInt(0)));
-        var occupied = new HashSet<uint>(parts.Rows.Where(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" || r.Name == "CHARA_PARTS_GLOVE_MODEL").Select(r => r.UInt(0)));
+        var occupied = new HashSet<uint>(parts.Rows.Where(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" || r.Name == "CHARA_PARTS_GLOVE_MODEL" || r.Name == "CHARA_PARTS_COLOR").Select(r => r.UInt(0)));
         var converted = new Dictionary<string, byte[]>();
         var portraitBindings = new Dictionary<string, string[]>();
         var pending = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
@@ -60,7 +62,7 @@ public static partial class UniformMakerExporter
                     if (id == 0 || !occupied.Add(id)) throw new InvalidDataException("Uniform resource ID collision: " + value);
                     return id;
                 }
-                if ((variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0) || variant.clothesModelId != 0 || variant.armbandModelId != 0 || variant.skinModelId != 0 || variant.numberModelId != 0 || variant.nameModelId != 0 || variant.IsHidden(UniformPartKind.Name) ||
+                if (variant.hasNameColor || (variant.inheritPortraitCollar || variant.inheritPortraitSleeve || (variant.portraitIcons?.Count ?? 0) > 0) || variant.clothesModelId != 0 || variant.armbandModelId != 0 || variant.skinModelId != 0 || variant.numberModelId != 0 || variant.nameModelId != 0 || variant.IsHidden(UniformPartKind.Name) ||
                     variant.IsHidden(UniformPartKind.Skin) || variant.IsHidden(UniformPartKind.Number) || variant.IsHidden(UniformPartKind.Armband) ||
                     variant.hideUpper || variant.hideLower || variant.partFbx.Any(p => p.part != UniformPartKind.Gloves) || variant.fbx != null || variant.textures.Any(t => t.part != UniformPartKind.Gloves))
                 {
@@ -98,6 +100,10 @@ public static partial class UniformMakerExporter
                             var previousStyle = parts.Rows.FirstOrDefault(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.Text(1) == previousModel.Text(1) + suffix) ?? previousModel;
                             var previousRows = Referenced(parts, previousStyle, "CHARA_PARTS_CLOTHES_INFO");
                             var merged = previousRows.Select(r => r.Clone()).ToList();
+                            foreach (var inherited in merged)
+                                if (inherited.UInt(5) == 0 && previousRows[0].UInt(5) != 0) {
+                                    inherited.Types[5] = 1; inherited.Values[5] = previousRows[0].Values[5];
+                                }
                             foreach (var inherited in merged) for (int field = 0; field < inherited.Values.Length; field++)
                                 if (string.IsNullOrWhiteSpace(inherited.Text(field)) && !string.IsNullOrWhiteSpace(previousRows[0].Text(field))) Text(inherited, field, previousRows[0].Text(field));
                             int index = merged.FindIndex(r => r.Int(2) == variant.bodyAttribute);
@@ -119,7 +125,10 @@ public static partial class UniformMakerExporter
                                     if (selectedPart == null) throw new InvalidDataException("Accessory is not available for this body.");
                                     Text(row, modelField, selectedPart.Text(modelField) ?? refs[0].Text(modelField));
                                     Text(row, textureField, selectedPart.Text(textureField) ?? refs[0].Text(textureField));
-                                    if (kind == UniformPartKind.Number) { row.Types[5] = selectedPart.Types[5]; row.Values[5] = selectedPart.Values[5]; }
+                                    if (kind == UniformPartKind.Number) {
+                                        row.Types[5] = 1;
+                                        row.Values[5] = selectedPart.UInt(5) != 0 ? selectedPart.Values[5] : refs[0].Values[5];
+                                    }
                                 }
                                 if (!variant.IsHidden(kind)) return;
                                 ClearModelReference(row, modelField, textureField);
@@ -135,10 +144,21 @@ public static partial class UniformMakerExporter
                                     var numberModel = nativeRows.Rows.Single(r => r.Name == "CHARA_PARTS_CLOTHES_MODEL" && r.UInt(0) == variant.numberModelId);
                                     var numberRows = Referenced(nativeRows, numberModel, "CHARA_PARTS_CLOTHES_INFO");
                                     var numberRow = numberRows.FirstOrDefault(r => r.Int(2) == row.Int(2)) ?? numberRows.FirstOrDefault(r => r.Int(2) == catalog.BodyByAttribute((int)row.Int(2)).Int(6)) ?? numberRows[0];
-                                    row.Types[5] = numberRow.Types[5]; row.Values[5] = numberRow.Values[5];
+                                    row.Types[5] = 1; row.Values[5] = numberRow.UInt(5) != 0 ? numberRow.Values[5] : numberRows[0].Values[5];
                                 }
                             }
                             Accessory(8, 9, UniformPartKind.Armband, variant.armbandModelId);
+                            if (variant.hasNameColor && !variant.IsHidden(UniformPartKind.Name)) {
+                                uint inheritedColor = row.UInt(5) != 0 ? row.UInt(5) : sourceInfo[0].UInt(5);
+                                var nativeColor = nativeRows.Rows.SingleOrDefault(r => r.Name == "CHARA_PARTS_COLOR" && r.UInt(0) == inheritedColor);
+                                if (nativeColor == null) throw new InvalidDataException("Missing native uniform lettering color.");
+                                var color = nativeColor.Clone();
+                                uint colorId = Allocate(key + suffix + ":letter-color:" + row.Int(2));
+                                color.Values[0] = unchecked((long)(int)colorId);
+                                color.Values[1] = unchecked((long)(int)UniformLabelAsset.EncodeColor(variant.nameColor));
+                                parts.Insert("CHARA_PARTS_COLOR_LIST_BEG", "CHARA_PARTS_COLOR_LIST_END", color);
+                                row.Types[5] = 1; row.Values[5] = unchecked((long)(int)colorId);
+                            }
                             void Build(int modelField, int textureField, UniformPartKind kind, bool split)
                             {
                                 string mesh = row.Text(modelField) ?? Read(modelField), texture = row.Text(textureField) ?? Read(textureField);

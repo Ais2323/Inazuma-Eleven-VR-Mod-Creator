@@ -20,6 +20,14 @@ public sealed partial class UniformMakerController
     void RefreshMaterialRows(UniformPartKind kind, PartControls controls)
     {
         ClearMaterialRows(controls);
+        if (kind == UniformPartKind.Name) {
+            foreach (string control in TextureControls) {
+                var button = controls.Root.Find(control)?.GetComponent<Button>();
+                if (button == null) continue;
+                button.onClick.RemoveAllListeners(); button.gameObject.SetActive(false);
+            }
+            return;
+        }
         var sets = PartRenderers(kind).Select(renderer => TextureProperties.Select(property =>
             renderer.sharedMaterial.HasProperty(property) ? renderer.sharedMaterial.GetTexture(property) : null).ToArray())
             .Where(set => set.Any(EditableTexture)).GroupBy(set => string.Join("|", set.Select(t => EditableTexture(t) ? t.name : "")))
