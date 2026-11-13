@@ -86,6 +86,7 @@
     "CharBuildType4": "粗暴",
     "CharBuildType5": "正義",
     "CharBuildType6": "自由",
+    "ModExportType": "輸出類型",
     "ModName": "模組名稱",
     "ModNamePlaceholder": "請輸入模組名稱",
     "searchPlaceholder": "搜尋...",

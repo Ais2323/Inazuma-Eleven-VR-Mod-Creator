@@ -6,12 +6,16 @@ using SFB;
 using UnityEngine;
 using UnityEngine.UI;
 using Newtonsoft.Json.Linq;
+using System.Text;
+
+public enum ModExportType { Viola, InazumaFantasy }
 
 public class MergeManager : MonoBehaviour
 {
     public GameObject SelectBarPrefab;
     public Transform SelectBarContentParent;
     public InputField modNameInput;
+    public Dropdown exportTypeDropdown;
 
     public void OnClickOpen()
     {
@@ -63,12 +67,15 @@ public class MergeManager : MonoBehaviour
                 }
                 catch (Exception e) { throw new InvalidDataException(Path.GetFileName(path) + "：" + e.Message, e); }
             }
-            string modRoot = ExportMod(modName, folders[0], documents, uniforms);
+            var exportType = exportTypeDropdown != null ? (ModExportType)exportTypeDropdown.value : ModExportType.Viola;
+            string modRoot = ExportMod(modName, folders[0], documents, uniforms, exportType);
             Debug.Log("模組匯出完成：" + modRoot + "\n每次匯出都是獨立版本，請只啟用同一批角色的一份模組。");
         } catch (Exception e) { Debug.LogError("合併匯出失敗：" + e.Message); }
     }
-    public static string ExportMod(string modName, string parent, IEnumerable<CharacterMakerDocument> documents, IEnumerable<UniformMakerDocument> uniforms = null)
+    public static string ExportMod(string modName, string parent, IEnumerable<CharacterMakerDocument> documents, IEnumerable<UniformMakerDocument> uniforms = null,
+        ModExportType exportType = ModExportType.Viola)
     {
+        if (!Enum.IsDefined(typeof(ModExportType), exportType)) throw new ArgumentOutOfRangeException(nameof(exportType));
         modName = (modName ?? "").Trim();
         if (string.IsNullOrWhiteSpace(modName)) throw new InvalidDataException("請輸入模組名稱。");
         string prefix = new string(modName.Select(c => c < 32 || "<>:\"/\\|?*".Contains(c) || char.IsWhiteSpace(c) ? '_' : c).ToArray()).Trim(' ', '.', '_');
@@ -88,14 +95,54 @@ public class MergeManager : MonoBehaviour
             if (characters.Length == 0 && kits.Length == 0) throw new InvalidDataException("No Maker documents selected.");
             string data = Path.Combine(stage, "data");
             Directory.CreateDirectory(data);
-            if (characters.Length > 0) CharacterMakerExportBatch.Export(characters, data, modName);
-            if (kits.Length > 0) UniformMakerExporter.Export(kits, data, modName);
-            var metadata = new JObject { ["Name"] = modName, ["Author"] = "", ["ModVersion"] = "1.0", ["GameVersion"] = "", ["ModLink"] = "" };
-            File.WriteAllText(Path.Combine(stage, "mod_data.json"), metadata.ToString());
+            bool viola = exportType == ModExportType.Viola;
+            if (characters.Length > 0) CharacterMakerExportBatch.Export(characters, data, modName, writeRegistry: viola);
+            if (kits.Length > 0) UniformMakerExporter.Export(kits, data, modName, writeRegistry: viola);
+            if (viola) {
+                var metadata = new JObject { ["Name"] = modName, ["Author"] = "", ["ModVersion"] = "1.0", ["GameVersion"] = "", ["ModLink"] = "" };
+                File.WriteAllText(Path.Combine(stage, "mod_data.json"), metadata.ToString());
+            }
+            else {
+                UniformMakerExporter.WriteFantasyShop(kits, data, stage, modName);
+                WriteFantasyPackage(stage, data, prefix, modName);
+            }
             // A newly owned staging folder is moved into a checked sibling, never an existing mod.
             Directory.Move(stage, target);
             return target;
         } finally { if (Directory.Exists(stage)) Directory.Delete(stage, true); }
+    }
+
+    // The Fantasy ModLoader reads assets by their game-relative path (without
+    // data/common or data/dx11). It infers the root from the native file type and
+    // game catalog. In particular, cpk_list.cfg.bin must never be overridden.
+    static void WriteFantasyPackage(string stage, string data, string id, string name)
+    {
+        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(data)), Path.GetFullPath(stage), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Fantasy data must belong to the current staging directory.");
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string root in new[] { "common", "dx11" }) {
+            string source = Path.Combine(data, root);
+            if (!Directory.Exists(source)) continue;
+            foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories).OrderBy(p => p, StringComparer.Ordinal)) {
+                string relative = file.Substring(source.Length + 1);
+                if (files.TryGetValue(relative, out var previous))
+                    throw new InvalidDataException("Inazuma Fantasy asset path occurs in both common and dx11: " + relative + " (" + previous + ")");
+                files.Add(relative, file);
+            }
+        }
+        foreach (var file in files) {
+            string target = Path.Combine(stage, "assets", file.Key);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)); File.Move(file.Value, target);
+        }
+        // Only this export's newly created staging directory is removed.
+        Directory.Delete(data, true);
+        string Quote(string value) => Newtonsoft.Json.JsonConvert.ToString(value);
+        string manifest = "id = " + Quote(id) + "\nname = " + Quote(name) + "\nversion = \"1.0.0\"\nauthor = \"\"\n" +
+            "description = \"Created with Inazuma Eleven VR Mod Creator\"\npriority = 0\nloader_min = \"2.0.0\"\n" +
+            "prefix = " + Quote(id) + "\nfolder = " + Quote(id) + "\n";
+        if (File.Exists(Path.Combine(stage, "content", "shops", "uniforms.toml")))
+            manifest += "requires = [\"VRFW>=0.2.4\"]\noptional = [\"InazumaFantasy\"]\n";
+        File.WriteAllText(Path.Combine(stage, "mod.toml"), manifest, new UTF8Encoding(false));
     }
 
 }

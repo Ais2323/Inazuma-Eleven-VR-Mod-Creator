@@ -2,11 +2,43 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using G4Composition;
 using G4Runtime;
 
 public static partial class UniformMakerExporter
 {
+    internal static void WriteFantasyShop(IEnumerable<UniformMakerDocument> documents, string data, string modRoot, string modName)
+    {
+        var uniforms = documents.ToArray();
+        if (uniforms.Length == 0) return;
+
+        string nativeDirectory = Path.Combine(DumpDataManager.CommonPath, "gamedata", "item");
+        string nativePath = CharacterIdentityCatalog.Find(nativeDirectory, "item_config_");
+        string exportedPath = Path.Combine(data, "common", "gamedata", "item", Path.GetFileName(nativePath));
+        var items = CfgTable.Read(File.ReadAllBytes(File.Exists(exportedPath) ? exportedPath : nativePath), nativePath);
+        var fashion = items.Rows.Where(row => row.Name == "ITEM_FASHION_INFO").ToArray();
+        var entries = new StringBuilder("schema = \"VRFW.shop/2\"\n\n[[edit]]\ntarget = \"InazumaFantasy.general_store\"\nif_mod = \"InazumaFantasy\"\n");
+        foreach (var uniform in uniforms) {
+            CfgTable.Row item;
+            if (uniform.isNewUniform) {
+                string itemKey = "uni_um_" + Digest(CharacterMakerExportBatch.NamespacedKey(modName, "uniform:" + uniform.newUniformKey));
+                item = fashion.SingleOrDefault(row => row.Text(11) == itemKey);
+            }
+            else item = fashion.FirstOrDefault(row => row.UInt(18) == uniform.targetUniformId);
+            if (item == null) throw new InvalidDataException("Missing exported uniform item for Fantasy shop.");
+
+            // Fantasy's curated store does not inherit the retail BB list.
+            // Its standard third-party kits cost 21 passion tokens (IECross).
+            entries.Append("\n  [[edit.entry]]\n  item = \"0x").Append(item.UInt(0).ToString("X8", System.Globalization.CultureInfo.InvariantCulture))
+                .Append("\"\n  price = ").Append(uniform.freeInShop ? 0 : 21)
+                .Append("\n  currency = \"tk_bb000001\"\n  stock = 1\n");
+        }
+        string directory = Path.Combine(modRoot, "content", "shops");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "uniforms.toml"), entries.ToString(), new UTF8Encoding(false));
+    }
+
     static Dictionary<UniformMakerDocument, uint> PrepareInventory(UniformMakerDocument[] docs, string output, string modName, ref byte[] configBytes)
     {
         string itemPath = CharacterIdentityCatalog.Find(Path.Combine(DumpDataManager.CommonPath, "gamedata", "item"), "item_config_");

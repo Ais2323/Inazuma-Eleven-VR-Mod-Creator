@@ -24,7 +24,7 @@ public static class CharacterMakerExportBatch
         return name.Length + ":" + name + ":" + characterKey;
     }
 
-    public static string[] Export(IEnumerable<CharacterMakerDocument> source, string destination, string modNamespace = null)
+    public static string[] Export(IEnumerable<CharacterMakerDocument> source, string destination, string modNamespace = null, bool writeRegistry = true)
     {
         if (!DumpDataManager.ValidateSavedPath()) throw new InvalidDataException(DumpDataManager.LastError);
         var docs = source.Select(Copy).ToArray();
@@ -113,7 +113,7 @@ public static class CharacterMakerExportBatch
                 string path = Path.Combine(stage, Relative(catalog, table.Source));
                 Directory.CreateDirectory(Path.GetDirectoryName(path)); File.WriteAllBytes(path, bytes);
             }
-            if (customVoice || catalog.Base.Rows.Any(r => r.Name == "CHARA_BASE_INFO" && r.Text(1).StartsWith("c9", StringComparison.Ordinal)))
+            if (writeRegistry && (customVoice || catalog.Base.Rows.Any(r => r.Name == "CHARA_BASE_INFO" && r.Text(1).StartsWith("c9", StringComparison.Ordinal))))
                 File.WriteAllBytes(Path.Combine(stage, "cpk_list.cfg.bin"), CharacterCpkRegistry.Build(CharacterCpkRegistry.FindSource(), destination, stage));
             foreach (string path in Directory.GetFiles(stage, "*", SearchOption.AllDirectories)) {
                 string output = Path.Combine(destination, path.Substring(stage.Length + 1));

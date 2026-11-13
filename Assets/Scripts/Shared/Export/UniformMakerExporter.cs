@@ -8,7 +8,7 @@ using G4Runtime;
 
 public static partial class UniformMakerExporter
 {
-    public static void Export(IEnumerable<UniformMakerDocument> source, string output, string modName)
+    public static void Export(IEnumerable<UniformMakerDocument> source, string output, string modName, bool writeRegistry = true)
     {
         if (!DumpDataManager.ValidateSavedPath()) throw new InvalidDataException(DumpDataManager.LastError);
         var docs = source.ToArray();
@@ -269,8 +269,10 @@ public static partial class UniformMakerExporter
             if (replacementClothes.TryGetValue(row.UInt(5), out uint replacement))
             { row.Values[5] = unchecked((long)(int)replacement); changedModels = true; }
         if (changedModels) File.WriteAllBytes(modelOutput, characterModels.Write());
-        string registry = Path.Combine(output, "cpk_list.cfg.bin");
-        File.WriteAllBytes(registry, CharacterCpkRegistry.Build(File.Exists(registry) ? registry : CharacterCpkRegistry.FindSource(), output, output));
+        if (writeRegistry) {
+            string registry = Path.Combine(output, "cpk_list.cfg.bin");
+            File.WriteAllBytes(registry, CharacterCpkRegistry.Build(File.Exists(registry) ? registry : CharacterCpkRegistry.FindSource(), output, output));
+        }
     }
 
     static CfgTable.Row[] Referenced(CfgTable table, CfgTable.Row model, string infoName)

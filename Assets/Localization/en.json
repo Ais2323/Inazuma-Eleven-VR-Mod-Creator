@@ -86,6 +86,7 @@
     "CharBuildType4": "Rough Play",
     "CharBuildType5": "Justice",
     "CharBuildType6": "Freedom",
+    "ModExportType": "Export type",
     "ModName": "Mod name",
     "ModNamePlaceholder": "Enter mod name",
     "searchPlaceholder": "search...",
