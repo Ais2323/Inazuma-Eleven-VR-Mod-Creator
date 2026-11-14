@@ -157,6 +157,7 @@
     "UniformImportPartFbx": "Import FBX for this part",
     "UniformShareAwayModels": "Away kit uses home models",
     "UniformShareBodyTextures": "Share textures & text color (same gender)",
+    "UniformShareAllVariants": "Copy body settings to all home/away & player/keeper kits",
     "UniformNameFontUnsupported": "The game uses a shared name font; per-uniform name font replacement is not supported.",
     "UniformNameFontEditsIgnored": "Name font texture edits in \"{0}\" were not exported: the game uses a shared font rather than a per-uniform font.",
     "UniformNameColor": "Text color",

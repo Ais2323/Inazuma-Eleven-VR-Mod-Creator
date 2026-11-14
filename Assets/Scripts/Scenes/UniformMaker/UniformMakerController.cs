@@ -30,8 +30,15 @@ public sealed partial class UniformMakerController : MonoBehaviour
     bool framed;
     string locale;
     int appliedNumber;
+    internal bool IsInitializing { get; private set; } = true;
 
     IEnumerator Start()
+    {
+        try { yield return Initialize(); }
+        finally { IsInitializing = false; }
+    }
+
+    IEnumerator Initialize()
     {
         if (numberSlider != null)
         {

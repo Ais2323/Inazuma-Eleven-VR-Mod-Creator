@@ -2,7 +2,6 @@ using UnityEngine;
 using UnityEngine.UI;
 using SFB;
 using System.IO;
-using UnityEngine.SceneManagement;
 
 public class StartSceneUIController : BaseUIController
 {
@@ -22,7 +21,7 @@ public class StartSceneUIController : BaseUIController
         if (LoadDumpBtn) LoadDumpBtn.interactable = !string.IsNullOrWhiteSpace(path);
         if (endSceneName != "")
         {
-            if (DumpDataManager.ValidateSavedPath()) SceneManager.LoadSceneAsync(endSceneName);
+            if (DumpDataManager.ValidateSavedPath()) ScenePageCache.Open(endSceneName);
         }
         
     }
@@ -63,7 +62,7 @@ public class StartSceneUIController : BaseUIController
         }
         if (endSceneName != "")
         {
-            SceneManager.LoadSceneAsync(endSceneName);
+            ScenePageCache.Open(endSceneName);
         }
     }
 }

@@ -19,6 +19,7 @@ public class PreviewCameraController : MonoBehaviour, IPointerDownHandler, IPoin
     Rect originalRect;
     float originalAspect;
     bool originalEnabled, capturedCamera, initialized, dragging;
+    bool paused;
     float yaw, pitch, distance;
     readonly Vector3[] corners = new Vector3[4];
 
@@ -35,7 +36,7 @@ public class PreviewCameraController : MonoBehaviour, IPointerDownHandler, IPoin
 
     protected virtual void LateUpdate()
     {
-        if (previewCamera == null) return;
+        if (previewCamera == null || paused || !Application.isFocused || Screen.width <= 0 || Screen.height <= 0) return;
         if (!capturedCamera)
         {
             originalTarget = previewCamera.targetTexture;
@@ -89,6 +90,7 @@ public class PreviewCameraController : MonoBehaviour, IPointerDownHandler, IPoin
                 name = "Character View Preview", filterMode = FilterMode.Bilinear };
             texture.Create();
         }
+        else if (!texture.IsCreated()) texture.Create();
         previewCamera.targetTexture = texture;
         previewCamera.rect = new Rect(0, 0, 1, 1);
         previewCamera.aspect = (float)width / height;
@@ -148,12 +150,25 @@ public class PreviewCameraController : MonoBehaviour, IPointerDownHandler, IPoin
     protected virtual void OnDisable()
     {
         dragging = false;
-        if (capturedCamera && previewCamera != null) previewCamera.enabled = false;
-        ReleaseTexture();
+        if (previewCamera != null) previewCamera.enabled = false;
+    }
+
+    void OnApplicationFocus(bool focused)
+    {
+        if (focused) return;
+        dragging = false;
+        if (previewCamera != null) previewCamera.enabled = false;
+    }
+
+    void OnApplicationPause(bool value)
+    {
+        paused = value;
+        if (value) OnApplicationFocus(false);
     }
 
     protected virtual void OnDestroy()
     {
+        ReleaseTexture();
         if (!capturedCamera || previewCamera == null) return;
         previewCamera.targetTexture = originalTarget;
         previewCamera.rect = originalRect;

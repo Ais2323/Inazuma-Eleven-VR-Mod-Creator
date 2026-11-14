@@ -157,6 +157,7 @@
     "UniformImportPartFbx": "匯入此部位 FBX",
     "UniformShareAwayModels": "客場共用主場模型",
     "UniformShareBodyTextures": "套用貼圖與字色到同性別全部體型",
+    "UniformShareAllVariants": "目前各體型設定套用至全部主客場／球員類型",
     "UniformNameFontUnsupported": "遊戲使用共用名字字體，不支援只替換單套服裝的名字字體貼圖。",
     "UniformNameFontEditsIgnored": "「{0}」的名字字體貼圖修改未匯出：遊戲使用共用字體，無法只套用到指定服裝。",
     "UniformNameColor": "文字顏色",

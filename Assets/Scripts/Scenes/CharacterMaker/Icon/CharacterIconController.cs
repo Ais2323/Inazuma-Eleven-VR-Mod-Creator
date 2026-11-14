@@ -55,7 +55,7 @@ public sealed class CharacterIconController : MonoBehaviour
 
     void LateUpdate()
     {
-        if (manager == null) return;
+        if (manager == null || !Application.isFocused) return;
         RefreshShirt();
         bool ready = HasUploadedPortrait || manager.HasPortraitTarget;
         SetVisible(front, ready); SetVisible(back, ready);
