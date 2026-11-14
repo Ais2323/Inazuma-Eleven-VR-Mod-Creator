@@ -104,6 +104,8 @@ public class MergeManager : MonoBehaviour
             }
             else {
                 UniformMakerExporter.WriteFantasyShop(kits, data, stage, modName);
+                if (kits.Length > 0 && characters.Length == 0)
+                    UniformMakerExporter.WriteFantasyUniformResources(data, stage, modName);
                 WriteFantasyPackage(stage, data, prefix, modName);
             }
             // A newly owned staging folder is moved into a checked sibling, never an existing mod.
