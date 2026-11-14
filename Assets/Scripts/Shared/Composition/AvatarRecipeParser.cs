@@ -591,12 +591,16 @@ namespace G4Composition
                     int stride = binary.Int(root + 8), rows = checked(values + binary.Int(root + 4)), rowCount = binary.Int(root + 12);
                     binary.Range(rows, rowCount * (long)stride);
                     var offsets = new Dictionary<string, int>(StringComparer.Ordinal);
+                    var widths = new Dictionary<string, int>(StringComparer.Ordinal);
                     for (int fieldIndex = first; fieldIndex < first + count; fieldIndex++)
                     {
                         int field = fields + fieldIndex * 32;
-                        if (names.TryGetValue(binary.U32(field), out string fieldName)) offsets[fieldName] = binary.Int(field + 12);
+                        if (names.TryGetValue(binary.U32(field), out string fieldName)) {
+                            offsets[fieldName] = binary.Int(field + 12);
+                            widths[fieldName] = binary.Int(field + 8);
+                        }
                     }
-                    return new List(Source, rows, rowCount, stride, offsets);
+                    return new List(Source, rows, rowCount, stride, offsets, widths);
                 }
                 throw new InvalidDataException(Source + ": missing " + listName + ".");
             }
@@ -625,6 +629,16 @@ namespace G4Composition
             }
             public int Int(int offset) => binary.Int(offset);
             public uint U32(int offset) => binary.U32(offset);
+            internal uint UnsignedField(List list, int row, string name)
+            {
+                int offset = checked(row + list.Field(name));
+                return list.FieldWidth(name) switch {
+                    1 => (uint)Byte(offset),
+                    2 => binary.U16(offset),
+                    4 => U32(offset),
+                    _ => throw new InvalidDataException(Source + ": unsupported integer field width for " + name)
+                };
+            }
             public float Float(int offset) => binary.F32(offset);
             public string String(int offset)
             {
@@ -645,13 +659,15 @@ namespace G4Composition
             {
                 readonly string source; readonly int rows, stride;
                 readonly Dictionary<string, int> fields;
+                readonly Dictionary<string, int> widths;
                 public int Count { get; }
                 internal int Stride => stride;
-                public List(string source, int rows, int count, int stride, Dictionary<string, int> fields)
-                { this.source = source; this.rows = rows; Count = count; this.stride = stride; this.fields = fields; }
+                public List(string source, int rows, int count, int stride, Dictionary<string, int> fields, Dictionary<string, int> widths)
+                { this.source = source; this.rows = rows; Count = count; this.stride = stride; this.fields = fields; this.widths = widths; }
                 public int Row(int index) => index >= 0 && index < Count ? checked(rows + index * stride) : throw new ArgumentOutOfRangeException(nameof(index));
                 public int Field(string name) => fields.TryGetValue(name, out int offset) ? offset : throw new InvalidDataException(source + ": missing field " + name + ".");
                 public string[] FieldNames => fields.Keys.ToArray();
+                internal int FieldWidth(string name) => widths.TryGetValue(name, out int width) ? width : throw new InvalidDataException(source + ": missing field " + name + ".");
             }
         }
     }
