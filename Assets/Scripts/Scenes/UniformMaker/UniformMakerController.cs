@@ -193,7 +193,8 @@ public sealed partial class UniformMakerController : MonoBehaviour
                 var part = G4ModelLoader.CreateModel(Path.Combine("chr", Path.GetDirectoryName(mesh)),
                     Path.GetFileNameWithoutExtension(mesh), Path.GetFileNameWithoutExtension(texture),
                     Path.Combine("chr", Path.GetDirectoryName(texture)), boneTransforms: pose,
-                    skeletonOverride: rig, headLocalSkinning: false, metadataOverride: imported?.Metadata, geometryOverride: imported?.Geometry);
+                    skeletonOverride: rig, headLocalSkinning: false, metadataOverride: imported?.Metadata, geometryOverride: imported?.Geometry,
+                    meshCreated: (filter, slot) => exportMeshSources.Add(filter, new ExportMeshSource { Path = mesh, Kind = kind, Slot = slot }));
                 part.transform.SetParent(model.transform, false);
                 return part;
             }
@@ -272,6 +273,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
 
     void ClearPreview()
     {
+        exportMeshSources.Clear();
         numberModel = null;
         uniformModel = armbandModel = gloveModel = skinModel = nameModel = null;
         ClearPartImages();

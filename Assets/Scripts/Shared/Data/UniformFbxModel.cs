@@ -13,6 +13,8 @@ public sealed class UniformFbxModel
     public string dataId;
     public List<UniformFbxBoneBinding> bones = new();
     public int[] meshSlots;
+    public int[] meshIndices;
+    public bool restoreBindPose;
     public float scale = 1;
     public bool flipV = true;
     // Unity's inline serialization can turn a null optional class into an empty
@@ -24,12 +26,15 @@ public sealed class UniformFbxModel
         if (string.IsNullOrEmpty(bytesBase64) || bones == null || bones.Count == 0 || meshSlots == null || meshSlots.Length == 0 ||
             bones.Any(b => b == null || string.IsNullOrEmpty(b.sourceName) || b.targetHash == 0) || meshSlots.Any(s => s < 0) ||
             scale <= 0 || float.IsNaN(scale) || float.IsInfinity(scale)) throw new InvalidDataException("Incomplete FBX skeleton/mesh binding.");
+        if (meshIndices != null && meshIndices.Length > 0 && (meshIndices.Length != meshSlots.Length || meshIndices.Any(i => i < 0) || meshIndices.Distinct().Count() != meshIndices.Length))
+            throw new InvalidDataException("Invalid FBX mesh selection.");
         if ((validatedPayloads == null || validatedPayloads.Add(bytesBase64)) && payloadLengths.GetValue(bytesBase64, value => new PayloadLength { Value = Convert.FromBase64String(value).Length }).Value > 64 * 1024 * 1024)
             throw new InvalidDataException("FBX exceeds 64 MB.");
     }
     public UniformFbxModel Clone() => IsEmpty ? null : new UniformFbxModel {
-        fileName = fileName, bytesBase64 = bytesBase64, dataId = dataId, scale = scale, flipV = flipV,
+        fileName = fileName, bytesBase64 = bytesBase64, dataId = dataId, scale = scale, flipV = flipV, restoreBindPose = restoreBindPose,
         meshSlots = meshSlots == null ? null : (int[])meshSlots.Clone(),
+        meshIndices = meshIndices == null ? null : (int[])meshIndices.Clone(),
         bones = bones?.Select(b => b == null ? null : new UniformFbxBoneBinding { sourceName = b.sourceName, targetHash = b.targetHash }).ToList()
     };
 }

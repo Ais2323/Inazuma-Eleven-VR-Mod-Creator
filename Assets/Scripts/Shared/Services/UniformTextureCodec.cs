@@ -9,6 +9,26 @@ using UnityEngine;
 
 internal static class UniformTextureCodec
 {
+    internal static byte[] ToPng(Texture source, bool linear)
+    {
+        var previous = RenderTexture.active;
+        var target = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32,
+            linear ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.sRGB);
+        Texture2D readable = null;
+        try {
+            Graphics.Blit(source, target); RenderTexture.active = target;
+            readable = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false, linear);
+            readable.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+            var pixels = readable.GetPixels32();
+            var flipped = new Color32[pixels.Length];
+            for (int y = 0; y < source.height; y++)
+                Array.Copy(pixels, y * source.width, flipped, (source.height - y - 1) * source.width, source.width);
+            readable.SetPixels32(flipped); readable.Apply(false, false);
+            return readable.EncodeToPNG();
+        }
+        finally { RenderTexture.active = previous; RenderTexture.ReleaseTemporary(target); Release(readable); }
+    }
+
     internal static Texture2D Decode(byte[] bytes, string extension, int width, int height, bool linear)
     {
         Texture2D texture = null;

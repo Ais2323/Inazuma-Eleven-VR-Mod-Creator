@@ -290,6 +290,7 @@ public sealed partial class UniformMakerController
     void RefreshPartControls()
     {
         if (fbxImportButton != null) fbxImportButton.interactable = selected >= 0;
+        if (fbxExportButton != null) fbxExportButton.interactable = selected >= 0 && model != null && exportMeshSources.Count > 0;
         foreach (var pair in partControls)
         {
             var kind = pair.Key; var controls = pair.Value;

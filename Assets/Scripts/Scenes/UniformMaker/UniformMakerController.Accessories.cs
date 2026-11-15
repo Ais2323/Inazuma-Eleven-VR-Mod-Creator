@@ -34,7 +34,12 @@ public sealed partial class UniformMakerController
 
     internal void SetAccessory(UniformPartKind kind, uint id, bool hidden)
     {
-        var edit = ModelEdit; if (edit == null) return;
+        if (AssignAccessory(kind, id, hidden)) RebuildBodyPreview();
+    }
+
+    bool AssignAccessory(UniformPartKind kind, uint id, bool hidden)
+    {
+        var edit = ModelEdit; if (edit == null) return false;
         if (hidden) id = 0;
         edit.PartFbx.Remove(kind);
         if (kind == UniformPartKind.Upper || kind == UniformPartKind.Lower) {
@@ -47,7 +52,8 @@ public sealed partial class UniformMakerController
         else if (kind == UniformPartKind.Armband) { edit.Armband = id; edit.HideArmband = hidden; }
         else if (kind == UniformPartKind.Gloves) { edit.Gloves = id; edit.HideGloves = hidden; }
         else throw new ArgumentOutOfRangeException(nameof(kind));
-        ClearPartEdits(edit, kind); RebuildBodyPreview();
+        ClearPartEdits(edit, kind);
+        return true;
     }
 
     static void SetOptionLabel(Button button, string text)

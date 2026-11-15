@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 using System.IO;
 using G4Runtime;
 using G4Composition;
@@ -19,7 +20,8 @@ public static class G4ModelLoader
         G4Skeleton skeletonOverride = null,
         bool headLocalSkinning = true,
         AvatarBoneTransform rigidAttachment = null,
-        byte[] metadataOverride = null, byte[] geometryOverride = null)
+        byte[] metadataOverride = null, byte[] geometryOverride = null,
+        Action<MeshFilter, int> meshCreated = null)
     {
         // ??頝臬?
         var modelRoot = Path.Combine(DumpDataManager.CommonPath, modelPath);
@@ -128,6 +130,7 @@ public static class G4ModelLoader
             partObject.transform.SetParent(modelObject.transform, false);
             partObject.GetComponent<MeshFilter>().sharedMesh = mesh;
             partObject.GetComponent<MeshRenderer>().sharedMaterial = materials[part.Material];
+            meshCreated?.Invoke(partObject.GetComponent<MeshFilter>(), part.SourceMeshIndex);
             if (skeleton != null && modelName.StartsWith("hair", System.StringComparison.OrdinalIgnoreCase))
                 partObject.AddComponent<AvatarMeshSkin>().Capture(part, skeleton);
         }
@@ -253,7 +256,7 @@ public static class G4ModelLoader
         return a + ab * insideV + ac * insideW;
     }
 
-    static Matrix4x4[] BuildDeformedBind(G4Skeleton skeleton, IReadOnlyDictionary<uint, AvatarBoneTransform> transforms)
+    internal static Matrix4x4[] BuildDeformedBind(G4Skeleton skeleton, IReadOnlyDictionary<uint, AvatarBoneTransform> transforms)
     {
         var result = new Matrix4x4[skeleton.Bind.Length];
         for (int i = 0; i < result.Length; i++)

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using G4Composition;
 using G4Runtime;
 using UnityEngine;
@@ -11,11 +12,18 @@ using UnityEngine;
 internal sealed class UniformFbxReader
 {
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<string, UniformFbxReader> parsedFiles = new();
-    internal static UniformFbxReader Read(UniformFbxModel model) => parsedFiles.GetValue(model.bytesBase64, value => Read(Convert.FromBase64String(value)));
+    internal static UniformFbxReader Read(UniformFbxModel model)
+    {
+        var parsed = parsedFiles.GetValue(model.bytesBase64, value => Read(Convert.FromBase64String(value)));
+        if (model.meshIndices == null || model.meshIndices.Length == 0) return parsed;
+        if (model.meshIndices.Any(i => i < 0 || i >= parsed.Parts.Length)) throw new InvalidDataException("FBX mesh selection exceeds the source file.");
+        return new UniformFbxReader { Bones = parsed.Bones, Parts = model.meshIndices.Select(i => parsed.Parts[i]).ToArray(), ExportPose = parsed.ExportPose };
+    }
     internal sealed class Bone { internal string Name; internal Matrix4x4 Bind; }
     internal sealed class Part { internal string Name; internal Vector3[] Positions, Normals; internal Vector2[] Uv; internal int[,] Bones; internal float[,] Weights; }
     internal Bone[] Bones;
     internal Part[] Parts;
+    Dictionary<uint, Matrix4x4> ExportPose;
     [DllImport("UniformFbx", CallingConvention = CallingConvention.Cdecl)]
     static extern int uniform_fbx_read(byte[] data, UIntPtr size, out IntPtr output, out UIntPtr outputSize, StringBuilder error, UIntPtr errorSize);
     [DllImport("UniformFbx", CallingConvention = CallingConvention.Cdecl)] static extern void uniform_fbx_free(IntPtr data);
@@ -34,9 +42,11 @@ internal sealed class UniformFbxReader
             string Name() { int length = Count(1024 * 1024); var data = reader.ReadBytes(length); if (data.Length != length) throw new EndOfStreamException(); return Encoding.UTF8.GetString(data); }
             Vector3 Vec3() => new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             var result = new UniformFbxReader { Bones = new Bone[Count(4096)] };
+            result.ExportPose = ReadExportPose(bytes);
             for (int i = 0; i < result.Bones.Length; i++) {
                 var bone = new Bone { Name = Name() }; var matrix = new Matrix4x4();
-                for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) matrix[r, c] = reader.ReadSingle(); bone.Bind = matrix; result.Bones[i] = bone;
+                for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) matrix[r, c] = reader.ReadSingle();
+                bone.Bind = matrix; result.Bones[i] = bone;
             }
             result.Parts = new Part[Count(256)];
             for (int i = 0; i < result.Parts.Length; i++) {
@@ -63,7 +73,8 @@ internal sealed class UniformFbxReader
     internal static string Canonical(string value) => value.Split('|', ':').Last().ToLowerInvariant().Replace("_wgt_1_0", "");
     internal UniformFbxModel BindAutomatically(byte[] bytes, string fileName, G4Skeleton rig)
     {
-        var model = new UniformFbxModel { fileName = fileName, bytesBase64 = Convert.ToBase64String(bytes), meshSlots = new int[Parts.Length] };
+        var model = new UniformFbxModel { fileName = fileName, bytesBase64 = Convert.ToBase64String(bytes), meshSlots = new int[Parts.Length],
+            restoreBindPose = ExportPose != null };
         foreach (var bone in Bones) {
             var matches = Enumerable.Range(0, rig.Names.Length).Where(i => rig.Names[i] == bone.Name).ToArray();
             if (matches.Length == 0) matches = Enumerable.Range(0, rig.Names.Length).Where(i => Canonical(rig.Names[i]) == Canonical(bone.Name)).ToArray();
@@ -72,12 +83,51 @@ internal sealed class UniformFbxReader
         return model;
     }
 
+    static string ExportPoseTag(byte[] bytes)
+    {
+        byte[] marker = Encoding.ASCII.GetBytes(BinaryFbxExporter.ArmatureName + "_B");
+        for (int i = 0; i <= bytes.Length - marker.Length; i++) {
+            if (bytes[i] != marker[0]) continue;
+            int length = 1;
+            while (length < marker.Length && bytes[i + length] == marker[length]) length++;
+            if (length == marker.Length) {
+                int end = i + length;
+                while (end < bytes.Length && end - i < 128 && (bytes[end] >= '0' && bytes[end] <= '9' || bytes[end] == '_' || bytes[end] == '-' || bytes[end] == 'C' || bytes[end] == 'H')) end++;
+                return Encoding.ASCII.GetString(bytes, i, end - i);
+            }
+        }
+        return null;
+    }
+
+    static Dictionary<uint, Matrix4x4> ReadExportPose(byte[] bytes)
+    {
+        // DCC applications can change rest-bone axes and remove rest scales.
+        // The source body tag reproduces the exact NativeBodyShape deformation
+        // to undo before applying the destination preview's body settings.
+        string tag = ExportPoseTag(bytes);
+        if (tag == null) return null;
+        var match = Regex.Match(tag, @"_B(\d+)_C(-?\d+)_H(\d+)$");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out int attribute) || attribute < 0 || attribute > 17 ||
+            !int.TryParse(match.Groups[2].Value, out int chest) || chest < -1 || chest > 2 ||
+            !int.TryParse(match.Groups[3].Value, out int hem) || hem < 0 || hem > 2)
+            throw new InvalidDataException("Invalid exported FBX body settings.");
+        string directory = Path.Combine(DumpDataManager.CommonPath, "gamedata", "character");
+        string path = CharacterIdentityCatalog.Find(directory, "chara_model_");
+        var body = CfgTable.Read(File.ReadAllBytes(path), path).Rows.FirstOrDefault(r => NativeBodyTypes.IsBody(r) && r.Int(4) == attribute)
+            ?? throw new InvalidDataException("The exported FBX body is missing from this game data.");
+        var rig = NativeBodyShape.Skeleton(body);
+        var pose = G4ModelLoader.BuildDeformedBind(rig, NativeBodyShape.Outfit(body, chest, hem));
+        var mirror = Matrix4x4.Scale(new Vector3(1, 1, -1));
+        return Enumerable.Range(0, rig.Hashes.Length).ToDictionary(i => rig.Hashes[i], i => mirror * pose[i] * mirror);
+    }
+
     internal void BindMesh(UniformFbxModel settings, G4Skeleton rig, int slot, out Mesh mesh, out uint[] hashes, out ushort[] weights)
     {
         settings.Validate();
         if (settings.bones.Count != Bones.Length || settings.meshSlots.Length != Parts.Length) throw new InvalidDataException("FBX binding does not match the source file.");
         var mirror = Matrix4x4.Scale(new Vector3(1, 1, -1));
         var transforms = new Matrix4x4[Bones.Length];
+        var skinTransforms = settings.restoreBindPose ? new Matrix4x4[Bones.Length] : null;
         for (int i = 0; i < Bones.Length; i++) {
             if (settings.bones[i].sourceName != Bones[i].Name || !rig.ByHash.TryGetValue(settings.bones[i].targetHash, out int target)) throw new InvalidDataException("Missing target bone: " + Bones[i].Name);
             // Vertices are already in normalized scene/world space. FBX bone
@@ -87,18 +137,37 @@ internal sealed class UniformFbxReader
             Vector3 sourceAnchor = Bones[i].Bind.GetColumn(3);
             Vector3 targetAnchor = (mirror * rig.Bind[target] * mirror).GetColumn(3);
             transforms[i] = Matrix4x4.TRS(targetAnchor, Quaternion.identity, Vector3.one * settings.scale) * Matrix4x4.Translate(-sourceAnchor);
+            if (skinTransforms != null) {
+                uint sourceHash = G4TextureParser.Crc32(Bones[i].Name.Split('|', ':').Last());
+                if (ExportPose == null || !ExportPose.TryGetValue(sourceHash, out var sourceBind) && !ExportPose.TryGetValue(settings.bones[i].targetHash, out sourceBind))
+                    throw new InvalidDataException("The exported FBX body does not contain bone " + Bones[i].Name);
+                skinTransforms[i] = sourceBind * (mirror * rig.Bind[target] * mirror).inverse;
+            }
         }
         var positions = new List<Vector3>(); var normals = new List<Vector3>(); var uv = new List<Vector2>(); var hashList = new List<uint>(); var weightList = new List<ushort>();
         for (int p = 0; p < Parts.Length; p++) {
             if (settings.meshSlots[p] != slot) continue; var part = Parts[p];
             for (int v = 0; v < part.Positions.Length; v++) {
                 Vector3 point = Vector3.zero, normal = Vector3.zero; int sum = 0, first = weightList.Count;
+                Matrix4x4 skin = Matrix4x4.zero, skinNormal = Matrix4x4.zero;
                 for (int w = 0; w < 8; w++) {
                     float amount = part.Weights[v, w]; int source = part.Bones[v, w];
                     if (amount > 0) { point += transforms[source].MultiplyPoint3x4(part.Positions[v]) * amount; normal += transforms[source].inverse.transpose.MultiplyVector(part.Normals[v]) * amount; }
+                    if (amount > 0 && skinTransforms != null) {
+                        Matrix4x4 transform = skinTransforms[source], normalTransform = transform.inverse.transpose;
+                        for (int row = 0; row < 4; row++) for (int column = 0; column < 4; column++) {
+                            skin[row, column] += transform[row, column] * amount;
+                            skinNormal[row, column] += normalTransform[row, column] * amount;
+                        }
+                    }
                     hashList.Add(amount > 0 ? settings.bones[source].targetHash : 0); ushort quantized = (ushort)Mathf.RoundToInt(amount * 65535); weightList.Add(quantized); sum += quantized;
                 }
                 weightList[first] = checked((ushort)(weightList[first] + 65535 - sum));
+                if (skinTransforms != null) {
+                    if (Mathf.Abs(skin.determinant) < 1e-10f) throw new InvalidDataException("FBX has a singular skin bind transform.");
+                    point = skin.inverse.MultiplyPoint3x4(part.Positions[v]) * settings.scale;
+                    normal = skinNormal.inverse.MultiplyVector(part.Normals[v]);
+                }
                 if (new[] { point.x, point.y, point.z, normal.x, normal.y, normal.z, part.Uv[v].x, part.Uv[v].y }.Any(value => float.IsNaN(value) || float.IsInfinity(value))) throw new InvalidDataException("FBX has non-finite geometry.");
                 positions.Add(point); normals.Add(normal.normalized); uv.Add(new Vector2(part.Uv[v].x, settings.flipV ? 1 - part.Uv[v].y : part.Uv[v].y));
             }
