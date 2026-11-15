@@ -21,33 +21,41 @@ public sealed partial class UniformMakerController
     }
     readonly Dictionary<MeshFilter, ExportMeshSource> exportMeshSources = new();
 
-    public void OnClickExportFbx()
+    public void OnClickExportFbx() => ExportFbx(null);
+
+    internal void ExportPartFbx(UniformPartKind kind) => ExportFbx(kind);
+
+    void ExportFbx(UniformPartKind? kind)
     {
         if (model == null || CurrentBody == null) return;
         string name = isNewUniform && uniformNameInput != null && !string.IsNullOrWhiteSpace(uniformNameInput.text)
             ? uniformNameInput.text : catalog.Entries[selected].Key;
         name = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        if (kind.HasValue) name += "_" + kind.Value;
         name += "_" + side + "_" + role + "_" + CurrentBody.Int(4);
-        string path = StandaloneFileBrowser.SaveFilePanel(LocalizationManager.GetText("UniformFbxExport"),
+        string path = StandaloneFileBrowser.SaveFilePanel(LocalizationManager.GetText(kind.HasValue ? "UniformFbxExportPart" : "UniformFbxExport"),
             SettingManager.GetExportDirectory("uniformFbxExportDirectory"), name, "fbx");
         if (string.IsNullOrWhiteSpace(path)) return;
         if (!path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)) path += ".fbx";
         try {
-            WriteOutfitFbx(path);
+            WriteSelectedFbx(path, kind);
             SettingManager.RememberExportDirectory("uniformFbxExportDirectory", Path.GetDirectoryName(Path.GetFullPath(path)));
             Debug.Log("[UniformMaker] Exported FBX: " + path, this);
         }
         catch (Exception error) { Debug.LogError("[UniformMaker FBX] " + error.Message, this); }
     }
 
-    internal void WriteOutfitFbx(string path)
+    internal void WriteOutfitFbx(string path) => WriteSelectedFbx(path, null);
+
+    internal void WriteSelectedFbx(string path, UniformPartKind? kind)
     {
         if (model == null || CurrentBody == null) throw new InvalidOperationException("Select a uniform first.");
         UpdateNameColor();
         path = Path.GetFullPath(path);
         string textureFolder = Path.GetFileNameWithoutExtension(path) + "_Textures";
         var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-        var scene = CaptureOutfitFbx(textureFolder, files);
+        var scene = CaptureSelectedFbx(textureFolder, files, kind);
+        if (scene.Meshes.Count == 0) throw new InvalidOperationException("No visible model in the selected part.");
         byte[] fbx = BinaryFbxExporter.Encode(scene);
         // Validate the emitted binary through the same importer used by players.
         var check = UniformFbxReader.Read(fbx);
@@ -71,6 +79,9 @@ public sealed partial class UniformMakerController
     }
 
     BinaryFbxExporter.Scene CaptureOutfitFbx(string textureFolder, Dictionary<string, byte[]> files)
+        => CaptureSelectedFbx(textureFolder, files, null);
+
+    BinaryFbxExporter.Scene CaptureSelectedFbx(string textureFolder, Dictionary<string, byte[]> files, UniformPartKind? selectedKind)
     {
         var rig = NativeBodyShape.Skeleton(CurrentBody);
         var mirror = Matrix4x4.Scale(new Vector3(1, 1, -1));
@@ -99,6 +110,7 @@ public sealed partial class UniformMakerController
             var part = native.Parts.Single(p => p.SourceMeshIndex == source.Slot);
             UniformPartKind kind = source.Kind;
             if (kind == UniformPartKind.Upper && UniformFbxWriter.MatchesPart(native, source.Slot, UniformPartKind.Lower)) kind = UniformPartKind.Lower;
+            if (selectedKind.HasValue ? kind != selectedKind.Value : kind != UniformPartKind.Upper && kind != UniformPartKind.Lower) continue;
             var mesh = filter.sharedMesh;
             var material = renderer.sharedMaterial;
             if (!materials.TryGetValue(material, out int materialIndex)) {

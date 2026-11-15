@@ -59,7 +59,7 @@ public sealed partial class UniformMakerController
     sealed class PartControls
     {
         internal Transform Root;
-        internal Button Select, Export, Import;
+        internal Button Select, Export, Import, ExportFbx;
         internal RawImage Icon;
         internal readonly Button[] Buttons = new Button[4];
         internal readonly RawImage[] Images = new RawImage[4];
@@ -130,6 +130,8 @@ public sealed partial class UniformMakerController
             partControls.Add(kind, controls);
             controls.Import = root.Find("ImportFbx")?.GetComponent<Button>();
             if (controls.Import != null) controls.Import.onClick.AddListener(() => ImportFbxPart(kind));
+            controls.ExportFbx = root.Find("ExportFbx")?.GetComponent<Button>();
+            if (controls.ExportFbx != null) controls.ExportFbx.onClick.AddListener(() => ExportPartFbx(kind));
             EnsureSpmControl(root);
             if (controls.Select != null) controls.Select.onClick.AddListener(() => OpenModelSelect(kind));
             controls.Export = partsPanel.Find(kind + "Export")?.GetComponent<Button>();
@@ -300,6 +302,7 @@ public sealed partial class UniformMakerController
                 controls.Export.gameObject.SetActive(kind != UniformPartKind.Gloves || role == 1);
                 controls.Export.interactable = CurrentTexture(kind, 0) != null;
             }
+            if (controls.ExportFbx != null) controls.ExportFbx.interactable = PartRenderers(kind).Any(r => r.enabled && r.gameObject.activeInHierarchy && r.GetComponent<MeshFilter>()?.sharedMesh?.vertexCount > 0);
             if (controls.Import != null) controls.Import.interactable = selected >= 0;
             if (controls.Select != null) controls.Select.interactable = selected >= 0 && (kind != UniformPartKind.Gloves || role == 1);
             if (controls.Icon != null)
