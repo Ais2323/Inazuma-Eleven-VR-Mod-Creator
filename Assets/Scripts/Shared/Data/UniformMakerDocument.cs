@@ -14,6 +14,7 @@ public sealed partial class UniformMakerDocument
     public uint targetUniformId;
     public string targetKey;
     public bool isNewUniform, freeInShop, shareAwayModels;
+    public bool equipmentShoesConfigured, lockEquipmentShoes;
     public uint templateUniformId;
     public string newUniformKey, uniformName;
     public List<UniformLocalizedName> names = new();

@@ -47,6 +47,7 @@ public sealed partial class UniformMakerController
             names = uniformNames.Select(n => new UniformLocalizedName { locale = n.locale, name = n.name }).ToList(),
             iconPngBase64 = uploadedIcon == null ? null : Convert.ToBase64String(uploadedIcon),
             freeInShop = freeShopToggle != null && freeShopToggle.isOn,
+            equipmentShoesConfigured = true, lockEquipmentShoes = lockEquipmentShoes,
             side = side, role = role, bodyType = bodyType, gender = gender, collar = collar, sleeve = sleeve, hem = hem,
             chestSize = chestSize, number = uniformNumber, skinColor = SelectedSkinColor };
         foreach (var pair in kitEdits.Where(p => p.Key.StartsWith(entry.Id + "/", StringComparison.Ordinal)).OrderBy(p => p.Key, StringComparer.Ordinal))
@@ -126,6 +127,7 @@ public sealed partial class UniformMakerController
         DisposePartEditor();
         foreach (var pair in prepared) kitEdits.Add(pair.Key, pair.Value);
         selected = index; side = doc.side; role = doc.role; bodyType = doc.bodyType;
+        lockEquipmentShoes = doc.equipmentShoesConfigured ? doc.lockEquipmentShoes : catalog.Entries[selected].LocksEquipmentShoes;
         gender = doc.gender == 0 ? (bodyType == 2 ? 2 : 1) : doc.gender;
         if (catalog.BodyForType(bodyType, gender) == null) bodyType = gender == 2 ? 2 : 1;
         isNewUniform = doc.isNewUniform; newUniformKey = doc.newUniformKey;

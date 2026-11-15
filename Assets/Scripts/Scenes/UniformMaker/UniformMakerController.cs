@@ -107,6 +107,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
         isNewUniform = false; newUniformKey = null; shareAwayModels = false;
         if (freeShopToggle != null) freeShopToggle.SetIsOnWithoutNotify(false);
         selected = index;
+        lockEquipmentShoes = catalog.Entries[selected].LocksEquipmentShoes;
         LoadUniformInfo();
         CloseModelSelect();
         selections.Clear();

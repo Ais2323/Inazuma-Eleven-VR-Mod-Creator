@@ -12,6 +12,7 @@ internal sealed class UniformCatalog
     {
         internal uint Id, TextId;
         internal string Key;
+        internal bool LocksEquipmentShoes;
         internal readonly uint[,] Models = new uint[2, 2]; // home/away, fielder/keeper
         internal readonly uint[] Gloves = new uint[2];
     }
@@ -112,6 +113,7 @@ internal sealed class UniformCatalog
                 if (type > 1) continue;
                 for (int role = 0; role < 2; role++) entry.Models[type, role] = config.U32(model + role * 4);
                 entry.Gloves[type] = config.U32(model + models.Field("gloveModelIdCrc"));
+                entry.LocksEquipmentShoes |= config.Byte(model + models.Field("shoesModelIdLocked")) != 0;
             }
             if (entry.Models[0, 0] != 0) Entries.Add(entry);
         }

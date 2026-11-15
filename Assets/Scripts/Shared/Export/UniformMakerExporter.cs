@@ -45,6 +45,17 @@ public static partial class UniformMakerExporter
                 ?? throw new InvalidDataException("Unknown target uniform: " + doc.targetKey);
             int info = Enumerable.Range(0, uniformList.Count).Select(uniformList.Row).Single(r => config.U32(r) == targetId);
             uint span = config.U32(info + uniformList.Field("modelInfo"));
+            if (doc.equipmentShoesConfigured) {
+                int lockedField = modelList.Field("shoesModelIdLocked");
+                if (modelList.FieldWidth("shoesModelIdLocked") != 1) throw new InvalidDataException("Unexpected uniform shoe lock field width.");
+                for (int i = 0; i < (span >> 16); i++) {
+                    int row = modelList.Row((int)(span & 0xffff) + i);
+                    configBytes[row + lockedField] = (byte)(doc.lockEquipmentShoes ? 1 : 0);
+                    if (doc.lockEquipmentShoes)
+                        foreach (string field in new[] { "shoesFielderModelIdCrc", "shoesKeeperModelIdCrc", "shoesDirectorModelIdCrc", "shoesManagerModelIdCrc" })
+                            Put(configBytes, row + modelList.Field(field), 0);
+                }
+            }
             foreach (var variant in ExpandBodyVariants(doc, catalog).Select(v => {
                 if (!doc.shareAwayModels || v.side != 1) return v;
                 var shared = v.Copy();

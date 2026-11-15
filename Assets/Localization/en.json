@@ -156,6 +156,7 @@
     "UniformPortraitInheritSleeve": "Sleeves: use normal",
     "UniformImportPartFbx": "Import FBX for this part",
     "UniformShareAwayModels": "Away kit uses home models",
+    "UniformLockEquipmentShoes": "Ignore equipped shoes",
     "UniformShareBodyTextures": "Share textures & text color (same gender)",
     "UniformShareAllVariants": "Copy body settings to all home/away & player/keeper kits",
     "UniformNameFontUnsupported": "The game uses a shared name font; per-uniform name font replacement is not supported.",

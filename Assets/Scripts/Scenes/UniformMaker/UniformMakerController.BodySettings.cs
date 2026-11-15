@@ -10,6 +10,8 @@ public sealed partial class UniformMakerController
     public Transform bodySetting;
     public Image skinColor;
     public Toggle shareAwayModelsToggle;
+    public Toggle lockEquipmentShoesToggle;
+    bool lockEquipmentShoes;
     public Button shareBodyTexturesButton;
     public Button shareAllVariantsButton;
     bool shareAwayModels;
@@ -128,6 +130,7 @@ public sealed partial class UniformMakerController
 
     void InitializeBodySettings()
     {
+        if (lockEquipmentShoesToggle != null) lockEquipmentShoesToggle.onValueChanged.AddListener(value => lockEquipmentShoes = value);
         if (shareBodyTexturesButton != null) shareBodyTexturesButton.onClick.AddListener(OnClickShareBodyTextures);
         if (shareAllVariantsButton != null) shareAllVariantsButton.onClick.AddListener(OnClickShareAllVariants);
         if (shareAwayModelsToggle != null) shareAwayModelsToggle.onValueChanged.AddListener(value => {
@@ -202,6 +205,10 @@ public sealed partial class UniformMakerController
 
     void RefreshBodySettingButtons()
     {
+        if (lockEquipmentShoesToggle != null) {
+            lockEquipmentShoesToggle.SetIsOnWithoutNotify(lockEquipmentShoes);
+            lockEquipmentShoesToggle.interactable = catalog != null && selected >= 0;
+        }
         if (shareAwayModelsToggle != null) shareAwayModelsToggle.SetIsOnWithoutNotify(shareAwayModels);
         if (shareBodyTexturesButton != null) shareBodyTexturesButton.interactable = catalog != null && selected >= 0;
         if (shareAllVariantsButton != null) shareAllVariantsButton.interactable = catalog != null && selected >= 0;

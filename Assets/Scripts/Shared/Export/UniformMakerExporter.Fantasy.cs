@@ -111,7 +111,9 @@ public static partial class UniformMakerExporter
                 foreach (var field in primary)
                     looks.Append("  ").Append(field.Value).Append(" = ").Append(FantasyId(output.UnsignedField(models, row, field.Key))).Append('\n');
                 var cells = models.FieldNames.Where(name => name != "typeId" && !primary.ContainsKey(name))
-                    .Select(name => name + " = " + FantasyId(output.UnsignedField(models, row, name)));
+                    .Select(name => name + " = " + (name == "shoesModelIdLocked"
+                        ? (output.Byte(row + models.Field(name)) != 0 ? "true" : "false")
+                        : FantasyId(output.UnsignedField(models, row, name))));
                 looks.Append("  cells = { ").Append(string.Join(", ", cells)).Append(" }\n");
             }
         }
