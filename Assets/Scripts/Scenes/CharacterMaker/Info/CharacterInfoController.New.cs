@@ -11,7 +11,7 @@ public partial class CharacterInfoController
     void InitializeNewControls()
     {
         if (newCharacterButton == null || freeSoulToggle == null || ReplacePortrait == null) {
-            Debug.LogError("New character controls are not bound in the scene."); return;
+            AppLog.Error("New character controls are not bound in the scene."); return;
         }
         freeSoulToggle.onValueChanged.AddListener(value => nowCharacterData.freeSoulInShop = value);
         RefreshNewControls();

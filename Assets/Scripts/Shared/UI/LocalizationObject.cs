@@ -7,7 +7,7 @@ public class LocalizationObject : BaseUIController
 
     public override void UpdateLocalization()
     {
-        if (target) target.text = LocalizationManager.GetText(targetLoc);
+        if (target) target.text = LocalizationManager.GetText(targetLoc, gameObject.scene.name);
     }
 
     void Awake()

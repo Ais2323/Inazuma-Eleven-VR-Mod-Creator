@@ -25,7 +25,9 @@ public sealed partial class UniformMakerController
 
     internal void ExportPartFbx(UniformPartKind kind) => ExportFbx(kind);
 
-    void ExportFbx(UniformPartKind? kind)
+    void ExportFbx(UniformPartKind? kind) => Loading.Perform(() => ExportFbxCore(kind), "LoadingExport");
+
+    void ExportFbxCore(UniformPartKind? kind)
     {
         if (model == null || CurrentBody == null) return;
         string name = isNewUniform && uniformNameInput != null && !string.IsNullOrWhiteSpace(uniformNameInput.text)
@@ -40,9 +42,9 @@ public sealed partial class UniformMakerController
         try {
             WriteSelectedFbx(path, kind);
             SettingManager.RememberExportDirectory("uniformFbxExportDirectory", Path.GetDirectoryName(Path.GetFullPath(path)));
-            Debug.Log("[UniformMaker] Exported FBX: " + path, this);
+            AppLog.Result("[UniformMaker] Exported FBX: " + path, this);
         }
-        catch (Exception error) { Debug.LogError("[UniformMaker FBX] " + error.Message, this); }
+        catch (Exception error) { AppLog.Error("[UniformMaker FBX] " + error.Message, this); }
     }
 
     internal void WriteOutfitFbx(string path) => WriteSelectedFbx(path, null);

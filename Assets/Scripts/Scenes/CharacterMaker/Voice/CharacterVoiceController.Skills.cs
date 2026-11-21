@@ -78,7 +78,7 @@ public partial class CharacterVoiceController
             foreach (var row in voiceFixedRows ?? Array.Empty<VoiceCategoryRow>())
                 row.sourceCueNames = nativeNames.Where(name => NormalVoiceCategories.Matches(row.category, name.Substring(name.IndexOf('_') + 1))).ToArray();
         }
-        catch (Exception error) { Debug.LogWarning("Cannot list source skill voices: " + error.Message, this); }
+        catch (Exception error) { AppLog.Warning("Cannot list source skill voices: " + error.Message, this); }
         var overrides = nowCharacterData.voiceOverrides ?? new List<CharacterVoiceOverride>();
         foreach (var entry in sourceVoiceEntries.Values)
         {
@@ -101,7 +101,7 @@ public partial class CharacterVoiceController
     {
         if (page.template == null || page.content == null) return;
         var source = page.template.transform.Find("skill");
-        if (source == null) { Debug.LogWarning("Voice Temp is missing its skill row.", this); return; }
+        if (source == null) { AppLog.Warning("Voice Temp is missing its skill row.", this); return; }
         var root = Instantiate(source.gameObject, page.content, false);
         root.name = source.name; root.SetActive(true);
         var skill = root.transform;
@@ -143,7 +143,7 @@ public partial class CharacterVoiceController
                     if (row.audio.removed || revision != voiceSelectionRevision) return;
                     string resource = catalog.VoiceCueResource(option), category = "cue:" + resource;
                     if (skillVoiceRows.Any(r => r != row && !r.audio.removed && r.audio.category == category))
-                    { Debug.LogWarning("Voice skill already selected: " + option.Label, this); return; }
+                    { AppLog.Warning("Voice skill already selected: " + option.Label, this); return; }
                     var previous = nowCharacterData.voiceOverrides?.Find(v => v.category == row.audio.category);
                     if (previous != null) nowCharacterData.voiceOverrides.Remove(previous);
                     row.audio.category = category; row.audio.skillId = option.Id; row.audio.skillResource = option.Resource;
@@ -158,7 +158,7 @@ public partial class CharacterVoiceController
                     StopVoicePreview(); RefreshSkillVoiceRow(row); RefreshVoiceFileLabels();
                 });
         }
-        catch (Exception error) { Debug.LogWarning("Voice skill selection: " + error.Message, this); }
+        catch (Exception error) { AppLog.Warning("Voice skill selection: " + error.Message, this); }
     }
 
     void RefreshSkillVoiceRow(SkillVoiceRow row)

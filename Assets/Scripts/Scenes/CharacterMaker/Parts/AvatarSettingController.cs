@@ -19,7 +19,9 @@ public class AvatarSettingController : MonoBehaviour
     public bool IsReadingImage { get; private set; }
     private CancellationTokenSource imageReadCancellation;
 
-    public async void OnClickLoadImage()
+    public void OnClickLoadImage() => Loading.RunTask(OnClickLoadImageCore, "LoadingOcr", () => imageReadCancellation?.Cancel());
+
+    async System.Threading.Tasks.Task OnClickLoadImageCore()
     {
         if (IsReadingImage) return;
         try
@@ -69,7 +71,9 @@ public class AvatarSettingController : MonoBehaviour
         }
     }
 
-    public void OnClickUpdate()
+    public void OnClickUpdate() => Loading.Perform(() => OnClickUpdateCore(), "LoadingModel");
+
+    void OnClickUpdateCore()
     {
         try
         {
@@ -124,7 +128,7 @@ public class AvatarSettingController : MonoBehaviour
     {
         if (this == null) return;
         lastError = operation + "：" + exception.Message;
-        Debug.LogWarning(lastError, this);
+        AppLog.Warning(lastError, this);
     }
 
     private void OnDestroy() => imageReadCancellation?.Cancel();

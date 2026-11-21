@@ -14,7 +14,7 @@ public static partial class UniformMakerExporter
         var docs = source.ToArray();
         foreach (var doc in docs) doc.Validate();
         foreach (var doc in docs.Where(d => d.variants.Any(v => v.textures.Any(t => t.part == UniformPartKind.Name))))
-            UnityEngine.Debug.LogWarning(string.Format(LocalizationManager.GetText("UniformNameFontEditsIgnored"), doc.uniformName ?? doc.targetKey));
+            AppLog.Warning(string.Format(LocalizationManager.GetText("UniformNameFontEditsIgnored"), doc.uniformName ?? doc.targetKey));
         if (docs.Where(d => !d.isNewUniform).GroupBy(d => d.targetUniformId).Any(g => g.Count() > 1) ||
             docs.Where(d => d.isNewUniform).GroupBy(d => d.newUniformKey).Any(g => g.Count() > 1))
             throw new InvalidDataException("More than one save targets the same uniform.");

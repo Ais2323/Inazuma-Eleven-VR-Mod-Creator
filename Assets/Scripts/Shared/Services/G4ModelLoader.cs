@@ -300,7 +300,7 @@ public static class G4ModelLoader
             : Path.Combine(Directory.GetParent(modelRoot).FullName, skeletonFolder, skeletonFolder + ".g4sk");
         if (!File.Exists(path)) return null;
         try { return G4Skeleton.Read(File.ReadAllBytes(path), path, "20_EDIT preview skeleton"); }
-        catch (System.Exception exception) { Debug.LogWarning("Cannot load preview skeleton " + path + ": " + exception.Message); return null; }
+        catch (System.Exception exception) { AppLog.Warning("Cannot load preview skeleton " + path + ": " + exception.Message); return null; }
     }
 
     static Texture2D CreateTexture(RuntimeHeadResources resources, G4TextureParser.TextureData data, bool linear)

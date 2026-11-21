@@ -9,7 +9,9 @@ using UnityEngine;
 
 public sealed partial class UniformMakerController
 {
-    void ExportPart(UniformPartKind kind)
+    void ExportPart(UniformPartKind kind) => Loading.Perform(() => ExportPartCore(kind), "LoadingExport");
+
+    void ExportPartCore(UniformPartKind kind)
     {
         if (CurrentTexture(kind, 0) == null) return;
         var folders = StandaloneFileBrowser.OpenFolderPanel("Export textures and UV", SettingManager.GetExportDirectory("textureExportDirectory"), false);
@@ -19,9 +21,9 @@ public sealed partial class UniformMakerController
         {
             string folder = Path.Combine(folders[0], catalog.Entries[selected].Key + "_" + side + "_" + role + "_" + kind);
             int count = WritePartTextures(kind, folder);
-            Debug.Log("[UniformMaker] Exported " + count + " texture(s) and UV: " + folder, this);
+            AppLog.Result("[UniformMaker] Exported " + count + " texture(s) and UV: " + folder, this);
         }
-        catch (Exception error) { Debug.LogError("[UniformMaker] " + error.Message, this); }
+        catch (Exception error) { AppLog.Error("[UniformMaker] " + error.Message, this); }
     }
 
     internal int WritePartTextures(UniformPartKind kind, string folder)

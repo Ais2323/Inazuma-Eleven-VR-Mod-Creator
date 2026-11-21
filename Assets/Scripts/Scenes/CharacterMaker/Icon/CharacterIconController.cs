@@ -49,7 +49,7 @@ public sealed class CharacterIconController : MonoBehaviour
         catch (Exception error)
         {
             ClearShirts();
-            Debug.LogWarning("Cannot load character shirt icons: " + error.Message, this);
+            AppLog.Warning("Cannot load character shirt icons: " + error.Message, this);
         }
     }
 
@@ -204,7 +204,9 @@ public sealed class CharacterIconController : MonoBehaviour
         outAlpha == 0 ? (byte)0 : (byte)((src * alpha + dst * dstAlpha * (255 - alpha) / 255) / outAlpha);
     static void SetVisible(RawImage image, bool visible) { if (image != null) image.enabled = visible; }
 
-    public void OnClickUploadIcon()
+    public void OnClickUploadIcon() => Loading.Perform(() => OnClickUploadIconCore(), "LoadingTexture");
+
+    void OnClickUploadIconCore()
     {
         Texture2D selectedFront = null, selectedBack = null;
         try
@@ -219,7 +221,7 @@ public sealed class CharacterIconController : MonoBehaviour
             SetUploadedPortrait(selectedFront, selectedBack);
             selectedFront = selectedBack = null;
         }
-        catch (Exception error) { Debug.LogWarning("Cannot load character icon: " + error.Message, this); }
+        catch (Exception error) { AppLog.Warning("Cannot load character icon: " + error.Message, this); }
         finally
         {
             if (selectedFront != null) CharacterManager.DestroyRuntimeObject(selectedFront);

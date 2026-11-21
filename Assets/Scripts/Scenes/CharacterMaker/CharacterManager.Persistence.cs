@@ -11,7 +11,9 @@ using SFB;
 
 public partial class CharacterManager : MonoBehaviour
 {
-    public void OnClickSave()
+    public void OnClickSave() => Loading.Perform(() => OnClickSaveCore(), "LoadingSave");
+
+    void OnClickSaveCore()
     {
         string defaultName = string.IsNullOrWhiteSpace(nowCharacterData.id)
             ? "character-maker" : nowCharacterData.id;
@@ -70,18 +72,20 @@ public partial class CharacterManager : MonoBehaviour
             }
             catch (Exception portraitException)
             {
-                Debug.LogWarning("頭像未寫入 CharacterMaker 存檔：" + portraitException.Message);
+                AppLog.Warning("頭像未寫入 CharacterMaker 存檔：" + portraitException.Message);
             }
             document.Write(path);
-            Debug.Log("CharacterMaker 狀態已儲存：" + path);
+            AppLog.Result("CharacterMaker 狀態已儲存：" + path);
         }
         catch (Exception exception)
         {
-            Debug.LogException(exception);
+            AppLog.Exception(exception);
         }
     }
 
-    public void OnClickLoad()
+    public void OnClickLoad() => Loading.Perform(() => OnClickLoadCore(), "LoadingRead");
+
+    void OnClickLoadCore()
     {
         string[] paths = StandaloneFileBrowser.OpenFilePanel(
             "讀取 CharacterMaker 狀態", "", "charamaker", false);
@@ -122,13 +126,13 @@ public partial class CharacterManager : MonoBehaviour
             RefreshAllTransformInputs();
             infoPage.RefreshBodySettingButtons();
             for (int option = 1; option <= 3; option++) RefreshTextureImages(option);
-            Debug.Log("CharacterMaker 狀態已讀取：" + paths[0]);
+            AppLog.Result("CharacterMaker 狀態已讀取：" + paths[0]);
             if (warnings.Count > 0)
-                Debug.LogWarning("部分內容未能恢復：\n- " + string.Join("\n- ", warnings));
+                AppLog.Warning("部分內容未能恢復：\n- " + string.Join("\n- ", warnings));
         }
         catch (Exception exception)
         {
-            Debug.LogException(exception);
+            AppLog.Exception(exception);
         }
     }
 

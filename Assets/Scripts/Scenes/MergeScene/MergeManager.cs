@@ -17,7 +17,9 @@ public class MergeManager : MonoBehaviour
     public InputField modNameInput;
     public Dropdown exportTypeDropdown;
 
-    public void OnClickOpen()
+    public void OnClickOpen() => Loading.Perform(() => OnClickOpenCore(), "LoadingRead");
+
+    void OnClickOpenCore()
     {
         string[] paths = StandaloneFileBrowser.OpenFilePanel(
             "Select CharacterMaker / UniformMaker saves", "", new[] { new ExtensionFilter("Maker saves", "charamaker", "uniformmaker") }, true);
@@ -32,45 +34,57 @@ public class MergeManager : MonoBehaviour
             if (string.IsNullOrWhiteSpace(selected)) continue;
             string path;
             try { path = Path.GetFullPath(selected); }
-            catch (Exception exception) { Debug.LogWarning("無效路徑：" + exception.Message); continue; }
+            catch (Exception exception) { AppLog.Warning("無效路徑：" + exception.Message); continue; }
             if (!existing.Add(path)) continue;
             GameObject bar = Instantiate(SelectBarPrefab, SelectBarContentParent, false);
             SelectBarController controller = bar.GetComponent<SelectBarController>();
             if (controller == null)
             {
                 Destroy(bar);
-                Debug.LogError("SelectBarPrefab 缺少 SelectBarController。");
+                AppLog.Error("SelectBarPrefab 缺少 SelectBarController。");
                 continue;
             }
             controller.SetPath(path);
         }
     }
 
-    public void OnClickExport()
+    public void OnClickExport() => StartCoroutine(Loading.Track(ExportSelected(), "LoadingExport"));
+
+    System.Collections.IEnumerator ExportSelected()
     {
         string[] paths = SelectBarContentParent.GetComponentsInChildren<SelectBarController>(true)
-            .Select(value => value.path).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
-        if (paths.Length == 0) { Debug.LogError("Add .charamaker or .uniformmaker saves first."); return; }
+            .Select(value => value.path).Where(value => !string.IsNullOrWhiteSpace(value))
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ThenBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (paths.Length == 0) { AppLog.Error("Add .charamaker or .uniformmaker saves first."); yield break; }
         string modName = modNameInput != null ? modNameInput.text.Trim() : "";
-        if (string.IsNullOrWhiteSpace(modName)) { Debug.LogError("請先輸入模組名稱。"); return; }
-        string[] folders = StandaloneFileBrowser.OpenFolderPanel("選擇模組輸出位置", SettingManager.GetExportDirectory("modExportDirectory"), false);
-        if (folders == null || folders.Length == 0 || string.IsNullOrWhiteSpace(folders[0])) return;
+        if (string.IsNullOrWhiteSpace(modName)) { AppLog.Error("Enter a Mod name first."); yield break; }
+        string[] folders = StandaloneFileBrowser.OpenFolderPanel("Export Mod", SettingManager.GetExportDirectory("modExportDirectory"), false);
+        if (folders == null || folders.Length == 0 || string.IsNullOrWhiteSpace(folders[0])) yield break;
         SettingManager.RememberExportDirectory("modExportDirectory", folders[0]);
+        var exportType = exportTypeDropdown != null ? (ModExportType)exportTypeDropdown.value : ModExportType.Viola;
+        var documents = new List<CharacterMakerDocument>();
+        var uniforms = new List<UniformMakerDocument>();
+        for (int i = 0; i < paths.Length; i++) {
+            string path = paths[i];
+            Loading.UpdateText(LocalizationManager.GetText("LoadingRead") + " " + Path.GetFileName(path));
+            Loading.UpdateProgress(i * 30 / paths.Length);
+            yield return null;
+            bool failed = false;
+            try {
+                if (Path.GetExtension(path).Equals(".uniformmaker", StringComparison.OrdinalIgnoreCase)) uniforms.Add(UniformMakerDocument.Read(path));
+                else if (Path.GetExtension(path).Equals(".charamaker", StringComparison.OrdinalIgnoreCase)) documents.Add(CharacterMakerDocument.Read(path));
+                else throw new InvalidDataException("Unsupported Maker save: " + path);
+            } catch (Exception error) { AppLog.Error(Path.GetFileName(path) + ": " + error.Message); failed = true; }
+            if (failed) yield break;
+        }
+        Loading.UpdateText(LocalizationManager.GetText("LoadingExport") + " " + modName);
+        Loading.UpdateProgress(35);
+        yield return null;
         try {
-            var documents = new List<CharacterMakerDocument>();
-            var uniforms = new List<UniformMakerDocument>();
-            foreach (string path in paths.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ThenBy(p => p, StringComparer.OrdinalIgnoreCase)) {
-                try {
-                    if (Path.GetExtension(path).Equals(".uniformmaker", StringComparison.OrdinalIgnoreCase)) uniforms.Add(UniformMakerDocument.Read(path));
-                    else if (Path.GetExtension(path).Equals(".charamaker", StringComparison.OrdinalIgnoreCase)) documents.Add(CharacterMakerDocument.Read(path));
-                    else throw new InvalidDataException("Unsupported Maker save: " + path);
-                }
-                catch (Exception e) { throw new InvalidDataException(Path.GetFileName(path) + "：" + e.Message, e); }
-            }
-            var exportType = exportTypeDropdown != null ? (ModExportType)exportTypeDropdown.value : ModExportType.Viola;
             string modRoot = ExportMod(modName, folders[0], documents, uniforms, exportType);
-            Debug.Log("模組匯出完成：" + modRoot + "\n每次匯出都是獨立版本，請只啟用同一批角色的一份模組。");
-        } catch (Exception e) { Debug.LogError("合併匯出失敗：" + e.Message); }
+            AppLog.Result("Mod exported: " + modRoot);
+        } catch (Exception error) { AppLog.Error("Mod export failed: " + error.Message); }
+        Loading.UpdateProgress(100);
     }
     public static string ExportMod(string modName, string parent, IEnumerable<CharacterMakerDocument> documents, IEnumerable<UniformMakerDocument> uniforms = null,
         ModExportType exportType = ModExportType.Viola)

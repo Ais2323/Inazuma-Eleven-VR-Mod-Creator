@@ -78,7 +78,9 @@ public partial class CharacterManager : MonoBehaviour
         selectionController.Initialize(); RefreshPageAvailability();
     }
     void OnEnable() { if (selectionController != null && infoPage != null) RefreshPageAvailability(); }
-    void Start()
+    void Start() => Loading.Perform(() => StartCore(), "LoadingInitialize");
+
+    void StartCore()
     {
         optionButtons = new();
         for (int i = 0; i < OptionButtonsParent.childCount; i++)

@@ -16,7 +16,9 @@ public sealed partial class UniformMakerController
         if (loadButton != null) { loadButton.interactable = false; loadButton.onClick.AddListener(OnClickLoad); }
     }
 
-    public void OnClickSave()
+    public void OnClickSave() => Loading.Perform(() => OnClickSaveCore(), "LoadingSave");
+
+    void OnClickSaveCore()
     {
         if (catalog == null || selected < 0) return;
         string name = isNewUniform && uniformNameInput != null ? uniformNameInput.text : catalog.Entries[selected].Key;
@@ -24,16 +26,18 @@ public sealed partial class UniformMakerController
         string path = StandaloneFileBrowser.SaveFilePanel("Save UniformMaker", "", name, "uniformmaker");
         if (string.IsNullOrWhiteSpace(path)) return;
         if (!path.EndsWith(".uniformmaker", StringComparison.OrdinalIgnoreCase)) path += ".uniformmaker";
-        try { CreateDocument().Write(path); Debug.Log("UniformMaker saved: " + path); }
-        catch (Exception error) { Debug.LogError("[UniformMaker] " + error.Message, this); }
+        try { CreateDocument().Write(path); AppLog.Result("UniformMaker saved: " + path); }
+        catch (Exception error) { AppLog.Error("[UniformMaker] " + error.Message, this); }
     }
 
-    public void OnClickLoad()
+    public void OnClickLoad() => Loading.Perform(() => OnClickLoadCore(), "LoadingRead");
+
+    void OnClickLoadCore()
     {
         var paths = StandaloneFileBrowser.OpenFilePanel("Load UniformMaker", "", "uniformmaker", false);
         if (paths == null || paths.Length == 0 || string.IsNullOrWhiteSpace(paths[0])) return;
-        try { RestoreDocument(UniformMakerDocument.Read(paths[0])); }
-        catch (Exception error) { Debug.LogError("[UniformMaker] " + error.Message, this); }
+        try { RestoreDocument(UniformMakerDocument.Read(paths[0])); AppLog.Result("UniformMaker loaded: " + paths[0]); }
+        catch (Exception error) { AppLog.Error("[UniformMaker] " + error.Message, this); }
     }
 
     internal UniformMakerDocument CreateDocument()

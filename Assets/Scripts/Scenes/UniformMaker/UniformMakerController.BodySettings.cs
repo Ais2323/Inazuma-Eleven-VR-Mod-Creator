@@ -16,7 +16,9 @@ public sealed partial class UniformMakerController
     public Button shareAllVariantsButton;
     bool shareAwayModels;
 
-    public void OnClickShareAllVariants()
+    public void OnClickShareAllVariants() => Loading.Perform(() => OnClickShareAllVariantsCore(), "LoadingCopy");
+
+    void OnClickShareAllVariantsCore()
     {
         if (CurrentEdit == null) return;
         UpdateNameColor();
@@ -92,7 +94,9 @@ public sealed partial class UniformMakerController
         return copy;
     }
 
-    public void OnClickShareBodyTextures()
+    public void OnClickShareBodyTextures() => Loading.Perform(() => OnClickShareBodyTexturesCore(), "LoadingCopy");
+
+    void OnClickShareBodyTexturesCore()
     {
         if (CurrentEdit == null) return;
         UpdateNameColor();
@@ -118,7 +122,7 @@ public sealed partial class UniformMakerController
             }
         }
         RefreshButtons();
-        Debug.Log("[UniformMaker] Applied current kit textures and enabled name color to all body types of gender " + gender + ".", this);
+        AppLog.Info("[UniformMaker] Applied current kit textures and enabled name color to all body types of gender " + gender + ".", this);
     }
 
     readonly List<Button> bodyButtons = new(), collarButtons = new(), sleeveButtons = new(), hemButtons = new(), chestButtons = new();
@@ -133,10 +137,10 @@ public sealed partial class UniformMakerController
         if (lockEquipmentShoesToggle != null) lockEquipmentShoesToggle.onValueChanged.AddListener(value => lockEquipmentShoes = value);
         if (shareBodyTexturesButton != null) shareBodyTexturesButton.onClick.AddListener(OnClickShareBodyTextures);
         if (shareAllVariantsButton != null) shareAllVariantsButton.onClick.AddListener(OnClickShareAllVariants);
-        if (shareAwayModelsToggle != null) shareAwayModelsToggle.onValueChanged.AddListener(value => {
+        if (shareAwayModelsToggle != null) shareAwayModelsToggle.onValueChanged.AddListener(value => Loading.Perform(() => {
             if (shareAwayModels == value) return;
             shareAwayModels = value; RebuildBodyPreview();
-        });
+        }, "LoadingModel"));
         appliedSkinColor = SelectedSkinColor;
         BindBodyButtons("Gender", 2, genderButtons, value => {
             gender = value + 1;
@@ -171,16 +175,16 @@ public sealed partial class UniformMakerController
     {
         if (bodySetting == null) return;
         var parent = bodySetting.Find(name + "/btns");
-        if (parent == null) { Debug.LogWarning("[UniformMaker] Missing BodySetting/" + name + "/btns", this); return; }
+        if (parent == null) { AppLog.Warning("[UniformMaker] Missing BodySetting/" + name + "/btns", this); return; }
         foreach (Transform child in parent)
         {
             var button = child.GetComponent<Button>();
             if (button == null) continue;
             int value = buttons.Count;
-            button.onClick.AddListener(() => select(value));
+            button.onClick.AddListener(() => Loading.Perform(() => select(value), "LoadingModel"));
             buttons.Add(button);
         }
-        if (buttons.Count != count) Debug.LogWarning("[UniformMaker] " + name + " expected " + count + " buttons, found " + buttons.Count, this);
+        if (buttons.Count != count) AppLog.Warning("[UniformMaker] " + name + " expected " + count + " buttons, found " + buttons.Count, this);
     }
 
     bool CanUseFashion(int wantedSleeve, int wantedHem)

@@ -121,7 +121,7 @@ public partial class CharacterManager : MonoBehaviour
             RememberBaseTransforms(nowCharacterData.other, otherBasePositions, otherBaseRotations, otherBaseScales);
             ApplyOtherPosition();
             if (nowCharacterData.other == null || nowCharacterData.other.Length == 0)
-                Debug.LogWarning(modelFrom.name + " 沒有第二個非臉部模型，Other 已清空。");
+                AppLog.Warning(modelFrom.name + " 沒有第二個非臉部模型，Other 已清空。");
         }
 
         if (option >= 1 && option <= 3)
@@ -203,7 +203,7 @@ public partial class CharacterManager : MonoBehaviour
             headPositionOffset, nowCharacterData.headTransformStartPosition,
             nowCharacterData.headExtraPosition,
             nowCharacterData.headExtraRotation, nowCharacterData.headExtraScale);
-        Debug.Log("Head 定位偏移：" + headPositionOffset);
+        AppLog.Info("Head 定位偏移：" + headPositionOffset);
     }
 
     internal void ApplyHairPosition()
@@ -220,7 +220,7 @@ public partial class CharacterManager : MonoBehaviour
             hairPositionOffset, nowCharacterData.hairTransformStartPosition,
             nowCharacterData.hairExtraPosition,
             nowCharacterData.hairExtraRotation, nowCharacterData.hairExtraScale);
-        Debug.Log("Hair 定位偏移：" + hairPositionOffset);
+        AppLog.Info("Hair 定位偏移：" + hairPositionOffset);
     }
 
     internal void ApplyOtherPosition()
@@ -237,7 +237,7 @@ public partial class CharacterManager : MonoBehaviour
             otherPositionOffset, nowCharacterData.otherTransformStartPosition,
             nowCharacterData.otherExtraPosition,
             nowCharacterData.otherExtraRotation, nowCharacterData.otherExtraScale);
-        Debug.Log("Other 定位偏移：" + otherPositionOffset);
+        AppLog.Info("Other 定位偏移：" + otherPositionOffset);
     }
 
     private static void ApplyPartTransform(
@@ -423,7 +423,7 @@ public partial class CharacterManager : MonoBehaviour
             }
             catch (Exception exception)
             {
-                Debug.LogWarning("Cannot resolve body head attachment: " + exception.Message);
+                AppLog.Warning("Cannot resolve body head attachment: " + exception.Message);
             }
         }
         targetFaceAnchor = attachment;

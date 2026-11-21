@@ -26,7 +26,9 @@ public partial class CharacterVoiceController
     public async Task PreviewVoiceAsync()
         => await PreviewVoiceAsync(null);
 
-    async Task PreviewVoiceAsync(string group)
+    Task PreviewVoiceAsync(string group) => Loading.TrackTask(() => PreviewVoiceAsyncCore(group), "LoadingAudio");
+
+    async Task PreviewVoiceAsyncCore(string group)
     {
         StopVoicePreview();
         var cancellation = new CancellationTokenSource();
@@ -90,7 +92,7 @@ public partial class CharacterVoiceController
             if (this == null || cancellation.IsCancellationRequested || !gameObject.activeInHierarchy) return;
             lastVoiceBank = result.Bank;
             lastVoiceWave = result.WaveId;
-            if (playedCue != null) Debug.Log($"[VoicePanel] {group} [{playedPosition + 1}/{totalClips}] {playedCue} / AWB {result.WaveId}", this);
+            if (playedCue != null) AppLog.Info($"[VoicePanel] {group} [{playedPosition + 1}/{totalClips}] {playedCue} / AWB {result.WaveId}", this);
             if (voicePreviewSource == null)
             {
                 voicePreviewSource = gameObject.AddComponent<AudioSource>();
@@ -110,7 +112,7 @@ public partial class CharacterVoiceController
             if (this != null && !cancellation.IsCancellationRequested)
             {
                 voicePreviewError = exception.Message;
-                Debug.LogWarning("語音預覽失敗：" + exception.Message, this);
+                AppLog.Warning("語音預覽失敗：" + exception.Message, this);
             }
         }
         finally

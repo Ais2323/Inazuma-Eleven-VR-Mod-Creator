@@ -31,7 +31,7 @@ internal sealed class ScenePageCache : MonoBehaviour
             DontDestroyOnLoad(host);
             instance = host.AddComponent<ScenePageCache>();
         }
-        if (!instance.changing) instance.StartCoroutine(instance.Change(sceneName));
+        if (!instance.changing) instance.StartCoroutine(Loading.Track(instance.Change(sceneName), "LoadingScene"));
     }
 
     IEnumerator Change(string sceneName)
@@ -41,7 +41,7 @@ internal sealed class ScenePageCache : MonoBehaviour
         if (target == source) yield break;
         if (!target.isLoaded && !Application.CanStreamedLevelBeLoaded(sceneName))
         {
-            Debug.LogError("[SceneChange] Scene is not in the build: " + sceneName);
+            AppLog.Error("[SceneChange] Scene is not in the build: " + sceneName);
             yield break;
         }
         changing = true;

@@ -44,7 +44,10 @@ public partial class CharacterInfoController
             {
                 var button = child.GetComponent<Button>(); if (button == null) continue;
                 int index = buttons.Count; string field = group;
-                button.onClick.AddListener(() => SetAttribute(field, index)); buttons.Add(button);
+                button.onClick.AddListener(() => {
+                    if (field == "Gender") Loading.Perform(() => SetAttribute(field, index), "LoadingModel");
+                    else SetAttribute(field, index);
+                }); buttons.Add(button);
             }
         }
         if (fullNameInput != null) fullNameInput.onValueChanged.AddListener(v => EditLocale(x => { x.fullName = v; x.japaneseName = x.locale == "ja" ? v : null; }));
@@ -62,7 +65,7 @@ public partial class CharacterInfoController
         });
         if (dumpReady)
             try { identityCatalog = CharacterIdentityCatalog.Get(); RefreshTeams(); }
-            catch (Exception e) { Debug.LogWarning("人物資訊載入失敗：" + e.Message); }
+            catch (Exception e) { AppLog.Warning("人物資訊載入失敗：" + e.Message); }
         RefreshIdentityFields();
     }
     static string AppLocale()
@@ -87,7 +90,7 @@ public partial class CharacterInfoController
             identityCatalog = CharacterIdentityCatalog.Get(); RefreshTeams();
             nowCharacterData.identity = identityCatalog.Load(id);
         }
-        catch (Exception e) { Debug.LogWarning("人物資訊載入失敗：" + e.Message); }
+        catch (Exception e) { AppLog.Warning("人物資訊載入失敗：" + e.Message); }
         SynchronizeBodyGender();
         RefreshIdentityFields();
     }

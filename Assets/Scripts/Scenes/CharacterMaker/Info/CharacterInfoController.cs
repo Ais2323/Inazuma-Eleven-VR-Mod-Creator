@@ -89,10 +89,12 @@ public partial class CharacterInfoController : MonoBehaviour
             bodyTypeButtons.Add(button);
         }
         if (bodyTypeButtons.Count != 8)
-            Debug.LogWarning("Body Type 需要 8 個按鈕，目前找到 " + bodyTypeButtons.Count + " 個。");
+            AppLog.Warning("Body Type 需要 8 個按鈕，目前找到 " + bodyTypeButtons.Count + " 個。");
     }
 
-    private void OnClickBodyType(int bodyType)
+    private void OnClickBodyType(int bodyType) => Loading.Perform(() => OnClickBodyTypeCore(bodyType), "LoadingModel");
+
+    void OnClickBodyTypeCore(int bodyType)
     {
         if (bodyType < 1 || bodyType > 8) return;
         if (bodyModelTable == null) return;
@@ -183,11 +185,11 @@ public partial class CharacterInfoController : MonoBehaviour
             Button button = buttons.GetChild(i).GetComponent<Button>();
             if (button == null) continue;
             int value = destination.Count;
-            button.onClick.AddListener(() => callback(value));
+            button.onClick.AddListener(() => Loading.Perform(() => callback(value), "LoadingModel"));
             destination.Add(button);
         }
         if (destination.Count != expectedCount)
-            Debug.LogWarning(groupName + " 需要 " + expectedCount + " 個按鈕，目前找到 " + destination.Count + " 個。");
+            AppLog.Warning(groupName + " 需要 " + expectedCount + " 個按鈕，目前找到 " + destination.Count + " 個。");
     }
 
     internal void RefreshBodySettingButtons()
@@ -275,7 +277,7 @@ public partial class CharacterInfoController : MonoBehaviour
         {
             ClearBodyPreviews();
             LoadDefaultBodyPreviews();
-            Debug.LogWarning(characterId + " 無法讀取原角色身體設定，已使用預設 Body Type 1：" + exception.Message);
+            AppLog.Warning(characterId + " 無法讀取原角色身體設定，已使用預設 Body Type 1：" + exception.Message);
         }
     }
 
@@ -298,7 +300,7 @@ public partial class CharacterInfoController : MonoBehaviour
         catch (Exception exception)
         {
             ClearBodyPreviews();
-            Debug.LogWarning("預設身體模型載入失敗：" + exception.Message);
+            AppLog.Warning("預設身體模型載入失敗：" + exception.Message);
         }
     }
 
@@ -514,7 +516,7 @@ public partial class CharacterInfoController : MonoBehaviour
     {
         int bodyLayer = LayerMask.NameToLayer("Body");
         if (bodyLayer < 0)
-            Debug.LogWarning("找不到 Body layer，身體可能會被頭像相機拍到。");
+            AppLog.Warning("找不到 Body layer，身體可能會被頭像相機拍到。");
         else SetLayerRecursively(preview.transform, bodyLayer);
 
         foreach (Transform variant in preview.transform)
@@ -539,7 +541,7 @@ public partial class CharacterInfoController : MonoBehaviour
         int bodyLayer = LayerMask.NameToLayer("Body");
         if (bodyLayer < 0)
         {
-            Debug.LogWarning("找不到 Body layer，無法設定頭像相機過濾。");
+            AppLog.Warning("找不到 Body layer，無法設定頭像相機過濾。");
             return;
         }
         if (charIconCamera != null)
@@ -562,7 +564,7 @@ public partial class CharacterInfoController : MonoBehaviour
             LoadBodyPreview(bodyType);
         foreach (var pair in bodyPreviews) pair.Value.SetActive(pair.Key == bodyType);
         if (!bodyPreviews.ContainsKey(bodyType) && bodyModelTable != null)
-            Debug.LogWarning("Body Type " + bodyType + " 沒有可用的原生身體模型。");
+            AppLog.Warning("Body Type " + bodyType + " 沒有可用的原生身體模型。");
         manager.UpdateTargetAnchorForBodyType(bodyType);
     }
 
@@ -720,7 +722,7 @@ public partial class CharacterInfoController : MonoBehaviour
             }
             catch (Exception rollbackException)
             {
-                Debug.LogException(rollbackException);
+                AppLog.Exception(rollbackException);
             }
             warnings.Add("身體設定：" + exception.Message);
         }
@@ -734,7 +736,9 @@ public partial class CharacterInfoController : MonoBehaviour
             color.b >= 0f && color.b <= 1f && color.a >= 0f && color.a <= 1f;
     }
 
-    public void OnClickAvatarInfo()
+    public void OnClickAvatarInfo() => Loading.Perform(() => OnClickAvatarInfoCore(), "LoadingModel");
+
+    void OnClickAvatarInfoCore()
     {
         manager.RefreshPageAvailability();
         if (!manager.HasAvatarInfo()) return;
@@ -758,9 +762,9 @@ public partial class CharacterInfoController : MonoBehaviour
             var warnings = new List<string>();
             RestoreSavedBody(document, warnings);
             RefreshBodySettingButtons();
-            if (warnings.Count > 0) Debug.LogWarning(string.Join("\n", warnings));
+            if (warnings.Count > 0) AppLog.Warning(string.Join("\n", warnings));
         }
-        catch (Exception exception) { Debug.LogException(exception); }
+        catch (Exception exception) { AppLog.Exception(exception); }
     }
 
 }

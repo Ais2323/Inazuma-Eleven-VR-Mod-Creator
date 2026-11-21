@@ -30,7 +30,7 @@ namespace G4Composition
             catch (Exception e)
             {
                 position = default;
-                if (!warned) Debug.LogWarning("Cannot resolve head attachment; using mesh bounds: " + e.Message, this);
+                if (!warned) AppLog.Warning("Cannot resolve head attachment; using mesh bounds: " + e.Message, this);
                 warned = true;
                 return false;
             }

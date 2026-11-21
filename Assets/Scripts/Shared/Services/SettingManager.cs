@@ -40,7 +40,7 @@ public static class SettingManager
         }
         catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException || e is JsonException)
         {
-            Debug.LogWarning("Cannot read settings: " + e.Message);
+            AppLog.Warning("Cannot read settings: " + e.Message);
         }
         if (!_setting.TryGetValue("path", out var path) || path == null) _setting["path"] = "";
         if (!_setting.TryGetValue("language", out var language) || string.IsNullOrWhiteSpace(language)) _setting["language"] = "en";
@@ -96,7 +96,7 @@ public static class SettingManager
         }
         catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException)
         {
-            Debug.LogWarning("Cannot save settings: " + e.Message);
+            AppLog.Warning("Cannot save settings: " + e.Message);
         }
     }
 }

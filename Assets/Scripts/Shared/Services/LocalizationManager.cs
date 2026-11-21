@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using UnityEngine.SceneManagement;
 
 public static class LocalizationManager
 {
@@ -12,10 +14,11 @@ public static class LocalizationManager
 
     private static List<BaseUIController> allUIComponment = new List<BaseUIController>();
 
-    private static Dictionary<string, string> locTexts = null;
+    private static JObject locTexts;
 
     static LocalizationManager()
     {
+        SceneManager.activeSceneChanged += (_, __) => RefreshUI();
 #if !UNITY_EDITOR
         // Also materialize bundled languages when only the player files were copied,
         // or when a user adds a missing language after the build was produced.
@@ -30,42 +33,64 @@ public static class LocalizationManager
         }
         catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException)
         {
-            Debug.LogWarning("Cannot create localization files: " + e.Message);
+            AppLog.Warning("Cannot create localization files: " + e.Message);
         }
 #endif
     }
 
     public static void UpdateLoc(string nowLoc)
     {
-        // 更新語系
         _nowLoc = nowLoc;
 
-        // 更新檔案
         string path = Path.Combine(LocalizationPath, $"{_nowLoc}.json");
         string json = null;
         try { if (File.Exists(path)) json = File.ReadAllText(path); }
-        catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException) { Debug.LogWarning(e.Message); }
+        catch (System.Exception e) when (e is IOException || e is System.UnauthorizedAccessException) { AppLog.Warning(e.Message); }
         if (json == null)
         {
             var asset = Resources.Load<TextAsset>("Localization/" + _nowLoc) ?? Resources.Load<TextAsset>("Localization/en");
             json = asset != null ? asset.text : "{}";
         }
-        try { locTexts = JsonConvert.DeserializeObject<Dictionary<string, string>>(json) ?? new Dictionary<string, string>(); }
-        catch (JsonException) { locTexts = new Dictionary<string, string>(); }
+        try { locTexts = JObject.Parse(json); }
+        catch (JsonException e)
+        {
+            locTexts = new JObject();
+            AppLog.Warning("Cannot parse localization " + _nowLoc + ": " + e.Message);
+        }
 
-        // 更新所有UI
-        allUIComponment.RemoveAll(c => c == null);
-        allUIComponment.ForEach(c => c.UpdateLocalization());
+        RefreshUI();
 
         SettingManager.UpdateInfo("language", _nowLoc);
     }
 
-    // 加入UI
     public static void AddComponment(BaseUIController c) => allUIComponment.Add(c);
 
-    public static string GetText(string target)
+    // Static callers resolve against the active scene. UI objects can supply their
+    // own scene so cached/additively loaded pages do not use another page's text.
+    public static string GetText(string target) => GetText(target, SceneManager.GetActiveScene().name);
+
+    public static string GetText(string target, string sceneName)
     {
         if (locTexts == null) UpdateLoc(_nowLoc);
-        return locTexts.TryGetValue(target, out var text) ? text : target;
+        if (string.IsNullOrEmpty(target)) return target;
+        if (!string.IsNullOrEmpty(sceneName) && TryText(locTexts[sceneName] as JObject, target, out string text)) return text;
+        if (TryText(locTexts["Common"] as JObject, target, out text)) return text;
+        // Existing user-provided flat language files remain readable.
+        return TryText(locTexts, target, out text) ? text : target;
+    }
+
+    static bool TryText(JObject section, string key, out string text)
+    {
+        JToken value = section?[key];
+        text = value?.Type == JTokenType.String ? value.Value<string>() : null;
+        return text != null;
+    }
+
+    static void RefreshUI()
+    {
+        if (locTexts == null) return;
+        allUIComponment.RemoveAll(c => c == null);
+        foreach (var component in allUIComponment.ToArray())
+            if (component != null) component.UpdateLocalization();
     }
 }

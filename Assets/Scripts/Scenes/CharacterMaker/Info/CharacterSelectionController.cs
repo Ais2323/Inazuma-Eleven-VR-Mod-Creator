@@ -44,7 +44,9 @@ public class CharacterSelectionController : MonoBehaviour
         if (target != VoiceSelection) manager.nowSelectOption = target;
         RefreshAvailability(); ShowFaceItems(); panel.gameObject.SetActive(true);
     }
-    public void OnClickAvatar()
+    public void OnClickAvatar() => Loading.Perform(() => OnClickAvatarCore(), "LoadingModel");
+
+    void OnClickAvatarCore()
     {
         if (!CanSelectAvatar()) return;
         if (SelectionTarget == VoiceSelection) manager.voiceController.SelectAvatarVoice();
@@ -72,7 +74,9 @@ public class CharacterSelectionController : MonoBehaviour
 
     public Button avatarBtn;
 
-    void ShowFaceItems()
+    void ShowFaceItems() => StartCoroutine(Loading.Track(ShowFaceItemsCore(), "LoadingModels"));
+
+    System.Collections.IEnumerator ShowFaceItemsCore()
     {
         for(int i = 0 ; i < showItemParent.childCount; i++)
             Destroy(showItemParent.GetChild(i).gameObject);
@@ -106,8 +110,10 @@ public class CharacterSelectionController : MonoBehaviour
             catch (Exception ex)
             {
                 charactorButtons[i].interactable = false;
-                Debug.LogWarning(ex);
+                AppLog.Warning(ex);
             }
+            Loading.UpdateProgress((i + 1) * 100 / 16);
+            yield return null;
         }
         PPageButton.interactable = nowPage > 0;
         NPageButton.interactable = nowPage < (int)Math.Floor(totalCount / 16f);
@@ -147,7 +153,9 @@ public class CharacterSelectionController : MonoBehaviour
         nowPage = 0;
         ShowFaceItems();
     }
-    void OnClickCharacter(int index)
+    void OnClickCharacter(int index) => Loading.Perform(() => OnClickCharacterCore(index), "LoadingModel");
+
+    void OnClickCharacterCore(int index)
     {
         if (SelectionTarget == VoiceSelection)
         {

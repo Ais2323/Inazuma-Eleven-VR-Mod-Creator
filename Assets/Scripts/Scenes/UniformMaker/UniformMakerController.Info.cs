@@ -94,16 +94,18 @@ public sealed partial class UniformMakerController
             infoIconTexture.LoadRawTextureData(data.Pixels); infoIconTexture.Apply(false, true);
             if (uniformIcon != null) { uniformIcon.texture = infoIconTexture; uniformIcon.uvRect = new Rect(0, 1, 1, -1); }
         }
-        catch (Exception e) { Debug.LogWarning("[UniformMaker] " + e.Message, this); }
+        catch (Exception e) { AppLog.Warning("[UniformMaker] " + e.Message, this); }
     }
 
-    public void OnClickUniformIcon()
+    public void OnClickUniformIcon() => Loading.Perform(() => OnClickUniformIconCore(), "LoadingTexture");
+
+    void OnClickUniformIconCore()
     {
         if (selected < 0) return;
         var files = StandaloneFileBrowser.OpenFilePanel("Uniform icon", "", new[] { new ExtensionFilter("Image", "png", "jpg", "jpeg") }, false);
         if (files == null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return;
         try { SetUploadedIcon(File.ReadAllBytes(files[0])); }
-        catch (Exception e) { Debug.LogError("[UniformMaker] " + e.Message, this); }
+        catch (Exception e) { AppLog.Error("[UniformMaker] " + e.Message, this); }
     }
 
     internal void SetUploadedIcon(byte[] bytes)
@@ -119,7 +121,9 @@ public sealed partial class UniformMakerController
         catch { DestroyAsset(texture); throw; }
     }
 
-    public async void OnClickTranslateUniformName()
+    public void OnClickTranslateUniformName() => Loading.RunTask(OnClickTranslateUniformNameCore, "LoadingTranslate", () => infoTranslation?.Cancel());
+
+    async System.Threading.Tasks.Task OnClickTranslateUniformNameCore()
     {
         string source = nameLocale;
         string text = uniformNames.Find(n => n.locale == source)?.name;
@@ -129,13 +133,13 @@ public sealed partial class UniformMakerController
         try
         {
             var result = await AutoTranslationService.TranslateAsync(new Dictionary<string, string> { { "name", text } }, source,
-                uniformNames.Select(n => n.locale), cancellation.Token, message => Debug.Log("[AutoTranslate][Uniform] " + message));
+                uniformNames.Select(n => n.locale), cancellation.Token, message => { Loading.UpdateText(message); AppLog.Info("[AutoTranslate][Uniform] " + message); });
             if (this == null || cancellation.IsCancellationRequested) return;
             foreach (var name in uniformNames)
                 if (result.TryGetValue(name.locale, out var fields) && fields.TryGetValue("name", out string value)) name.name = value;
         }
         catch (OperationCanceledException) { }
-        catch (Exception e) { if (this != null) Debug.LogError(LocalizationManager.GetText("AutoTranslateFailed") + ": " + e.Message); }
+        catch (Exception e) { if (this != null) AppLog.Error(LocalizationManager.GetText("AutoTranslateFailed") + ": " + e.Message); }
         finally
         {
             if (ReferenceEquals(infoTranslation, cancellation)) infoTranslation = null;

@@ -48,7 +48,9 @@ public class StartSceneUIController : BaseUIController
             dirInputField.text = paths[0];
     }
 
-    public void OnClickLoadDump()
+    public void OnClickLoadDump() => Loading.Perform(() => OnClickLoadDumpCore(), "LoadingDump");
+
+    void OnClickLoadDumpCore()
     {
         if (Directory.Exists(path) == false) return;
         // 更新load Dump路徑
@@ -57,7 +59,7 @@ public class StartSceneUIController : BaseUIController
         
         if (isSuccess == false)
         {
-            Debug.LogWarning("Dump Path is invalid");
+            AppLog.Warning("Dump Path is invalid");
             return;
         }
         if (endSceneName != "")

@@ -38,7 +38,9 @@ public partial class CharacterVoiceController
         if (voicePanel != null) voicePanel.SetActive(false);
     }
 
-    public void OnClickVoiceSetting()
+    public void OnClickVoiceSetting() => Loading.Perform(OnClickVoiceSettingCore, "LoadingAudio");
+
+    void OnClickVoiceSettingCore()
     {
         if (voicePanel == null) return;
         voicePanel.SetActive(true);

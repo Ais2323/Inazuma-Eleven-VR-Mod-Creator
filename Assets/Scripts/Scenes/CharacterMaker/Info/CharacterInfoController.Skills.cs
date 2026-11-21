@@ -24,7 +24,7 @@ public partial class CharacterInfoController
         skillsBindingAttempted = true;
         if (skillsParent == null || techniqueDropdown == null)
         {
-            Debug.LogError("Skills UI is not bound: assign skillsParent and techniqueDropdown in the scene's CharacterInfoController.");
+            AppLog.Error("Skills UI is not bound: assign skillsParent and techniqueDropdown in the scene's CharacterInfoController.");
             return;
         }
         foreach (Transform child in skillsParent.Cast<Transform>().Where(t => int.TryParse(t.name, out _)).OrderBy(t => int.Parse(t.name)))
@@ -67,10 +67,10 @@ public partial class CharacterInfoController
             }
             if (buildTypeButtons.Count != 6) throw new InvalidOperationException("Build type requires six authored icon buttons.");
         }
-        else Debug.LogError("Build type buttons are not bound in CharacterInfoController.");
+        else AppLog.Error("Build type buttons are not bound in CharacterInfoController.");
         skillsBound = true;
         if (dumpReady) try { identityCatalog = CharacterIdentityCatalog.Get(); SetSkillChoices(); }
-            catch (Exception e) { Debug.LogWarning("Skills: " + e.Message); }
+            catch (Exception e) { AppLog.Warning("Skills: " + e.Message); }
         RefreshSkills();
     }
     void SetSkillChoices()

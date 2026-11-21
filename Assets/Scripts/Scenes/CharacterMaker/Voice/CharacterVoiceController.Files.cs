@@ -29,7 +29,9 @@ public partial class CharacterVoiceController
     bool importingVoice;
     int voiceSelectionRevision;
 
-    async Task SelectVoiceFilesAsync(VoiceCategoryRow row)
+    Task SelectVoiceFilesAsync(VoiceCategoryRow row) => Loading.TrackTask(() => SelectVoiceFilesAsyncCore(row), "LoadingAudio");
+
+    async Task SelectVoiceFilesAsyncCore(VoiceCategoryRow row)
     {
         if (importingVoice || row.removed || string.IsNullOrEmpty(row.category)) return;
         string[] paths = StandaloneFileBrowser.OpenFilePanel("Select voice files", "",
@@ -46,7 +48,9 @@ public partial class CharacterVoiceController
             foreach (string path in paths)
             {
                 if (row.removed || row.category != category) return;
-                Debug.Log($"[VoicePanel] Import {row.category} [{files.Count + 1}/{paths.Length}] {Path.GetFileName(path)}", this);
+                AppLog.Info($"[VoicePanel] Import {row.category} [{files.Count + 1}/{paths.Length}] {Path.GetFileName(path)}", this);
+                Loading.UpdateText(Path.GetFileName(path));
+                Loading.UpdateProgress(files.Count * 100 / paths.Length);
                 byte[] hca;
                 if (Path.GetExtension(path).Equals(".hca", StringComparison.OrdinalIgnoreCase))
                 {
@@ -87,7 +91,7 @@ public partial class CharacterVoiceController
         }
         catch (Exception exception)
         {
-            if (this != null) { voicePreviewError = exception.Message; Debug.LogWarning("Voice import: " + exception.Message, this); }
+            if (this != null) { voicePreviewError = exception.Message; AppLog.Warning("Voice import: " + exception.Message, this); }
         }
         finally
         {

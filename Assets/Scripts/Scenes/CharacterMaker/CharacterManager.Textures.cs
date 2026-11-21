@@ -32,16 +32,18 @@ public partial class CharacterManager : MonoBehaviour
     private readonly Dictionary<string, ImportedTexture> importedTextures = new();
     private readonly Dictionary<int, List<TextureMaterialBinding>> previewMaterialBindings = new();
 
-    internal void ExportTextureAndUV(int option)
+    internal void ExportTextureAndUV(int option) => Loading.Perform(() => ExportTextureAndUVCore(option), "LoadingExport");
+
+    void ExportTextureAndUVCore(int option)
     {
         if (!TryGetOptionSelection(option, out string sourceId, out Transform[] selectedTransforms))
         {
-            Debug.LogError("請先選擇 Head、Hair 或 Other。");
+            AppLog.Error("請先選擇 Head、Hair 或 Other。");
             return;
         }
         if (string.IsNullOrEmpty(sourceId) || selectedTransforms == null || selectedTransforms.Length == 0)
         {
-            Debug.LogError("尚未選擇 " + OptionName(option) + " 模型。");
+            AppLog.Error("尚未選擇 " + OptionName(option) + " 模型。");
             return;
         }
 
@@ -116,11 +118,11 @@ public partial class CharacterManager : MonoBehaviour
                     CreateUvPng(uvTexture, item.Value));
             }
 
-            Debug.Log("貼圖與 UV 已輸出：" + folders[0]);
+            AppLog.Result("貼圖與 UV 已輸出：" + folders[0]);
         }
         catch (Exception ex)
         {
-            Debug.LogException(ex);
+            AppLog.Exception(ex);
         }
     }
     private static bool HasUv(RawHeadAsset source, G4ModelParser.Part part)
@@ -141,24 +143,26 @@ public partial class CharacterManager : MonoBehaviour
         return new string(value.Select(character => invalid.Contains(character) ? '_' : character).ToArray());
     }
 
-    internal void ImportTexture(int option)
+    internal void ImportTexture(int option) => Loading.Perform(() => ImportTextureCore(option), "LoadingTexture");
+
+    void ImportTextureCore(int option)
     {
         if (!TryGetOptionSelection(option, out string sourceId, out Transform[] selected))
         {
-            Debug.LogError("請先選擇 Head、Hair 或 Other。");
+            AppLog.Error("請先選擇 Head、Hair 或 Other。");
             return;
         }
 
         if (string.IsNullOrEmpty(sourceId) || selected == null || selected.Length == 0)
         {
-            Debug.LogError("尚未選擇 " + OptionName(option) + " 模型。");
+            AppLog.Error("尚未選擇 " + OptionName(option) + " 模型。");
             return;
         }
 
         string role = GetClickedTextureRole(option, selected);
         if (role == null)
         {
-            Debug.LogError("無法判斷要匯入主貼圖、OC 或 SPM。");
+            AppLog.Error("無法判斷要匯入主貼圖、OC 或 SPM。");
             return;
         }
 
@@ -213,12 +217,12 @@ public partial class CharacterManager : MonoBehaviour
             EnsurePreviewMaterials(option, selected);
             ApplyImportedPreviews(option);
             RefreshTextureImages(option);
-            Debug.Log("貼圖已匯入：" + paths[0]);
+            AppLog.Result("貼圖已匯入：" + paths[0]);
         }
         catch (Exception ex)
         {
             if (preview != null) DestroyRuntimeObject(preview);
-            Debug.LogException(ex);
+            AppLog.Exception(ex);
         }
         finally
         {

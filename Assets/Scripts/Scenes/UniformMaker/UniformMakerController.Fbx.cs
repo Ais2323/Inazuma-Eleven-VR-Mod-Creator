@@ -43,12 +43,14 @@ public sealed partial class UniformMakerController
 
     public void OnClickImportFbx() => ImportFbxPart(UniformPartKind.Upper, true);
 
-    void ImportFbxPart(UniformPartKind kind, bool whole = false)
+    void ImportFbxPart(UniformPartKind kind, bool whole = false) => Loading.Perform(() => ImportFbxPartCore(kind, whole), "LoadingFbx");
+
+    void ImportFbxPartCore(UniformPartKind kind, bool whole = false)
     {
         if (CurrentBody == null || selected < 0) return;
         var files = StandaloneFileBrowser.OpenFilePanel("Import uniform FBX", "", "fbx", false);
         if (files == null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return;
-        try { OpenFbxFile(files[0], kind, whole); } catch (Exception e) { Debug.LogError("[UniformMaker FBX] " + e.Message, this); }
+        try { OpenFbxFile(files[0], kind, whole); } catch (Exception e) { AppLog.Error("[UniformMaker FBX] " + e.Message, this); }
     }
 
     internal void OpenFbxFile(string path, UniformPartKind kind = UniformPartKind.Upper, bool whole = true)
@@ -137,7 +139,9 @@ public sealed partial class UniformMakerController
         return UniformFbxWriter.Build(File.ReadAllBytes(path), File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")), settings, NativeBodyShape.Skeleton(CurrentBody), pendingFbxWhole ? null : (Func<int, bool>)(slot => UniformFbxWriter.MatchesPart(parsed, slot, pendingFbxKind)));
     }
 
-    public void OnClickPreviewFbx()
+    public void OnClickPreviewFbx() => Loading.Perform(() => OnClickPreviewFbxCore(), "LoadingModel");
+
+    void OnClickPreviewFbxCore()
     {
         if (pendingFbxSettings == null) return;
         try {
@@ -156,10 +160,12 @@ public sealed partial class UniformMakerController
             var renderers = pendingFbxPreview.GetComponentsInChildren<Renderer>();
             if (renderers.Length > 0) { var bounds = renderers[0].bounds; foreach (var renderer in renderers) bounds.Encapsulate(renderer.bounds); preview.FrameBounds(bounds); }
             RefreshFbxStatus();
-        } catch (Exception e) { ReleaseFbxPreview(); fbxStatus.text = e.Message; Debug.LogError("[UniformMaker FBX] " + e.Message, this); }
+        } catch (Exception e) { ReleaseFbxPreview(); fbxStatus.text = e.Message; AppLog.Error("[UniformMaker FBX] " + e.Message, this); }
     }
 
-    public void OnClickApplyFbx()
+    public void OnClickApplyFbx() => Loading.Perform(() => OnClickApplyFbxCore(), "LoadingModel");
+
+    void OnClickApplyFbxCore()
     {
         if (pendingFbxSettings == null) return;
         try {
@@ -181,7 +187,7 @@ public sealed partial class UniformMakerController
             else SetAccessory(pendingFbxKind, PartOverride(pendingFbxKind), false);
             edit.PartFbx[pendingFbxKind] = boundSettings.Clone();
             CloseFbxBindings(); RebuildBodyPreview();
-        } catch (Exception e) { fbxStatus.text = e.Message; Debug.LogError("[UniformMaker FBX] " + e.Message, this); }
+        } catch (Exception e) { fbxStatus.text = e.Message; AppLog.Error("[UniformMaker FBX] " + e.Message, this); }
     }
 
     void ReleaseFbxPreview()

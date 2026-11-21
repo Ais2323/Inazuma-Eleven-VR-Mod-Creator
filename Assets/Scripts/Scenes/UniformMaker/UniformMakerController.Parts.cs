@@ -77,6 +77,7 @@ public sealed partial class UniformMakerController
     UniformPartKind modelKind;
     int modelPage;
     Coroutine modelPageRoutine;
+    int modelPageRevision;
     List<UniformCatalog.ModelOption> modelOptions;
 
     KitEdit ModelEdit => shareAwayModels && side == 1 ? EditFor(0, role, true) : CurrentEdit;
@@ -178,7 +179,8 @@ public sealed partial class UniformMakerController
     public void CloseModelSelect()
     {
         if (modelSelectPanel == null) return;
-        if (modelPageRoutine != null) { StopCoroutine(modelPageRoutine); modelPageRoutine = null; }
+        modelPageRevision++;
+        modelPageRoutine = null;
         ReleaseModelSprites();
         modelSelectPanel.gameObject.SetActive(false);
         if (mainPanel != null) mainPanel.gameObject.SetActive(true);
@@ -188,12 +190,13 @@ public sealed partial class UniformMakerController
     {
         if (modelOptions == null) return;
         modelPage = Mathf.Clamp(page, 0, Mathf.Max(0, (modelOptions.Count - 1) / modelChoices.Count));
-        if (modelPageRoutine != null) StopCoroutine(modelPageRoutine);
-        modelPageRoutine = StartCoroutine(FillModelPage());
+        int revision = ++modelPageRevision;
+        modelPageRoutine = StartCoroutine(Loading.Track(FillModelPage(revision), "LoadingModels"));
     }
 
-    IEnumerator FillModelPage()
+    IEnumerator FillModelPage(int revision)
     {
+        if (this == null || revision != modelPageRevision) yield break;
         ReleaseModelSprites();
         int start = modelPage * modelChoices.Count;
         modelPrevious.interactable = modelPage > 0;
@@ -202,6 +205,7 @@ public sealed partial class UniformMakerController
         foreach (var button in modelChoices) { button.interactable = false; SetModelImage(button, null); }
         for (int slot = 0; slot < modelChoices.Count; slot++)
         {
+            if (this == null || revision != modelPageRevision) yield break;
             int index = start + slot;
             var button = modelChoices[slot];
             button.gameObject.SetActive(index < modelOptions.Count);
@@ -229,8 +233,9 @@ public sealed partial class UniformMakerController
                     button.interactable = PartHidden(modelKind) || !catalog.MatchesModel(modelKind, option, current);
                 }
             }
-            catch (Exception error) { Debug.LogWarning("[UniformMaker] " + option.Name + ": " + error.Message, this); }
+            catch (Exception error) { AppLog.Warning("[UniformMaker] " + option.Name + ": " + error.Message, this); }
             finally { ReleaseSample(sample); }
+            Loading.UpdateProgress((slot + 1) * 100 / modelChoices.Count);
             yield return null;
         }
         modelPageRoutine = null;
@@ -243,7 +248,9 @@ public sealed partial class UniformMakerController
         if (image != null) { image.sprite = sprite; image.preserveAspect = true; image.enabled = sprite != null; }
     }
 
-    void SelectModelSlot(int slot)
+    void SelectModelSlot(int slot) => Loading.Perform(() => SelectModelSlotCore(slot), "LoadingModel");
+
+    void SelectModelSlotCore(int slot)
     {
         int index = modelPage * modelChoices.Count + slot;
         if (modelOptions == null || index >= modelOptions.Count || !modelChoices[slot].interactable) return;
@@ -338,13 +345,15 @@ public sealed partial class UniformMakerController
         }
     }
 
-    void ImportPartTexture(UniformPartKind kind, int channel, string name = null)
+    void ImportPartTexture(UniformPartKind kind, int channel, string name = null) => Loading.Perform(() => ImportPartTextureCore(kind, channel, name), "LoadingTexture");
+
+    void ImportPartTextureCore(UniformPartKind kind, int channel, string name = null)
     {
         if (kind == UniformPartKind.Name || CurrentTexture(kind, channel, name) == null) return;
         var paths = StandaloneFileBrowser.OpenFilePanel("Select DDS or PNG", "", new[] { new ExtensionFilter("Texture", "dds", "png") }, false);
         if (paths == null || paths.Length == 0 || string.IsNullOrEmpty(paths[0])) return;
         try { LoadPartTexture(kind, channel, paths[0], name); }
-        catch (Exception error) { Debug.LogError("[UniformMaker] " + error.Message, this); }
+        catch (Exception error) { AppLog.Error("[UniformMaker] " + error.Message, this); }
     }
 
     internal void LoadPartTexture(UniformPartKind kind, int channel, string path, string name = null)

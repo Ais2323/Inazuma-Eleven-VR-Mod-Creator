@@ -72,31 +72,35 @@ public sealed partial class UniformMakerController
                 portraitUniformIcon.texture = portraitTexture; portraitUniformIcon.uvRect = new Rect(0, 1, 1, -1);
             }
         }
-        catch (Exception error) { Debug.LogWarning("[Uniform portrait] " + error.Message, this); }
+        catch (Exception error) { AppLog.Warning("[Uniform portrait] " + error.Message, this); }
         portraitUniformIcon.enabled = portraitTexture != null;
         if (portraitMaskUploadButton != null) portraitMaskUploadButton.interactable = currentPortraitSource != null;
         if (portraitIconUploadButton != null) portraitIconUploadButton.interactable = currentPortraitSource != null;
         if (portraitIconExportButton != null) portraitIconExportButton.interactable = currentPortraitSource != null;
     }
 
-    public void OnClickUploadUniformPortrait()
+    public void OnClickUploadUniformPortrait() => Loading.Perform(() => OnClickUploadUniformPortraitCore(), "LoadingTexture");
+
+    void OnClickUploadUniformPortraitCore()
     {
         if (CurrentEdit == null || currentPortraitSource == null) return;
         var files = StandaloneFileBrowser.OpenFilePanel(LocalizationManager.GetText("UniformUploadPortraitIcon"), "",
             new[] { new ExtensionFilter("Image", "png", "jpg", "jpeg") }, false);
         if (files == null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return;
         try { SetUniformPortrait(File.ReadAllBytes(files[0])); }
-        catch (Exception error) { Debug.LogError("[Uniform portrait] " + error.Message, this); }
+        catch (Exception error) { AppLog.Error("[Uniform portrait] " + error.Message, this); }
     }
 
-    public void OnClickUploadUniformPortraitMask()
+    public void OnClickUploadUniformPortraitMask() => Loading.Perform(() => OnClickUploadUniformPortraitMaskCore(), "LoadingTexture");
+
+    void OnClickUploadUniformPortraitMaskCore()
     {
         if (CurrentEdit == null || currentPortraitSource == null) return;
         var files = StandaloneFileBrowser.OpenFilePanel(LocalizationManager.GetText("UniformUploadPortraitMask"), "",
             new[] { new ExtensionFilter("Image", "png", "jpg", "jpeg") }, false);
         if (files == null || files.Length == 0 || string.IsNullOrWhiteSpace(files[0])) return;
         try { SetUniformPortraitMask(File.ReadAllBytes(files[0])); }
-        catch (Exception error) { Debug.LogError("[Uniform portrait mask] " + error.Message, this); }
+        catch (Exception error) { AppLog.Error("[Uniform portrait mask] " + error.Message, this); }
     }
 
     internal void SetUniformPortraitMask(byte[] bytes)
@@ -114,7 +118,9 @@ public sealed partial class UniformMakerController
         RefreshPortraitIcon();
     }
 
-    public void OnClickExportUniformPortrait()
+    public void OnClickExportUniformPortrait() => Loading.Perform(() => OnClickExportUniformPortraitCore(), "LoadingExport");
+
+    void OnClickExportUniformPortraitCore()
     {
         if (currentPortraitSource == null) return;
         var folders = StandaloneFileBrowser.OpenFolderPanel(LocalizationManager.GetText("UniformExportPortraitIcon"),
@@ -124,9 +130,9 @@ public sealed partial class UniformMakerController
         try {
             string directory = Path.Combine(folders[0], catalog.Entries[selected].Key + "_" + side + "_" + role + "_" + CurrentBody.Int(4) + "_portrait");
             WriteUniformPortrait(directory);
-            Debug.Log("[Uniform portrait] Exported " + directory, this);
+            AppLog.Result("[Uniform portrait] Exported " + directory, this);
         }
-        catch (Exception error) { Debug.LogError("[Uniform portrait] " + error.Message, this); }
+        catch (Exception error) { AppLog.Error("[Uniform portrait] " + error.Message, this); }
     }
 
     internal void WriteUniformPortrait(string directory)

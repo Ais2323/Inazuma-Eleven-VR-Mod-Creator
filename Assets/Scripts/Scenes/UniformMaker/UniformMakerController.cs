@@ -32,7 +32,9 @@ public sealed partial class UniformMakerController : MonoBehaviour
     int appliedNumber;
     internal bool IsInitializing { get; private set; } = true;
 
-    IEnumerator Start()
+    IEnumerator Start() => Loading.Track(InitializeTracked(), "LoadingInitialize");
+
+    IEnumerator InitializeTracked()
     {
         try { yield return Initialize(); }
         finally { IsInitializing = false; }
@@ -64,11 +66,11 @@ public sealed partial class UniformMakerController : MonoBehaviour
         RefreshButtons();
         if (!DumpDataManager.ValidateSavedPath())
         {
-            Debug.LogError("[UniformMaker] " + DumpDataManager.LastError);
+            AppLog.Error("[UniformMaker] " + DumpDataManager.LastError);
             yield break;
         }
         try { catalog = new UniformCatalog(); }
-        catch (Exception error) { Debug.LogException(error, this); yield break; }
+        catch (Exception error) { AppLog.Exception(error, this); yield break; }
         locale = UniformCatalog.Locale;
         for (int i = 0; i < catalog.Entries.Count; i++)
         {
@@ -80,6 +82,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
             button.GetComponentInChildren<Text>(true).text = catalog.Name(catalog.Entries[i], locale);
             button.onClick.AddListener(() => SelectUniform(index));
             items.Add(button);
+            Loading.UpdateProgress((i + 1) * 90 / catalog.Entries.Count);
             if (i % 24 == 23) yield return null;
         }
         if (items.Count > 0) SelectUniform(0);
@@ -99,7 +102,9 @@ public sealed partial class UniformMakerController : MonoBehaviour
             items[i].GetComponentInChildren<Text>(true).text = catalog.Name(catalog.Entries[i], locale);
     }
 
-    public void SelectUniform(int index)
+    public void SelectUniform(int index) => Loading.Perform(() => SelectUniformCore(index), "LoadingModel");
+
+    void SelectUniformCore(int index)
     {
         if (catalog == null || index < 0 || index >= catalog.Entries.Count) return;
         CloseFbxBindings();
@@ -130,7 +135,9 @@ public sealed partial class UniformMakerController : MonoBehaviour
         RefreshButtons();
     }
 
-    void SelectVariant(int newSide, int newRole)
+    void SelectVariant(int newSide, int newRole) => Loading.Perform(() => SelectVariantCore(newSide, newRole), "LoadingModel");
+
+    void SelectVariantCore(int newSide, int newRole)
     {
         if (selected < 0 || GetSelection(newSide, newRole) == null) return;
         side = newSide; role = newRole;
@@ -155,7 +162,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
                 selection = catalog.Resolve(catalog.Entries[selected], wantedSide, wantedRole, CurrentBody, sleeve, hem, custom)
                     ?? catalog.Resolve(catalog.Entries[selected], wantedSide, wantedRole, CurrentBody, overrideId: custom);
             }
-            catch (Exception error) { Debug.LogWarning("[UniformMaker] " + catalog.Entries[selected].Key + ": " + error.Message, this); }
+            catch (Exception error) { AppLog.Warning("[UniformMaker] " + catalog.Entries[selected].Key + ": " + error.Message, this); }
             selections[key] = selection;
         }
         return selection;
@@ -267,7 +274,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
         catch (Exception error)
         {
             ClearPreview();
-            Debug.LogError("[UniformMaker] " + catalog.Entries[selected].Key + " / " + outfit.Uniform + ": " + error, this);
+            AppLog.Error("[UniformMaker] " + catalog.Entries[selected].Key + " / " + outfit.Uniform + ": " + error, this);
         }
     }
 

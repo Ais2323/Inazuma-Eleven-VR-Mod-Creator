@@ -202,7 +202,9 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         slot = slot, category = 5, auraId = option.Id, useExistingModel = true, characterName = option.Label,
         bindSkill = catalog.AuraTable.Rows.Single(r => r.Name == "AURA_CMD_INFO" && r.UInt(0) == option.Id).UInt(6)
     };
-    void SelectCharacterFile()
+    void SelectCharacterFile() => Loading.Perform(SelectCharacterFileCore, "LoadingRead");
+
+    void SelectCharacterFileCore()
     {
         if (category != 5 && category != 8) return;
         string[] paths = SFB.StandaloneFileBrowser.OpenFilePanel(LocalizationManager.GetText("BindNewCharacter"), "",
@@ -228,7 +230,7 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
             }
             if (category == 8) { Commit(template.Id, draft, false); RefreshModeName(); }
             else { bindSkill.interactable = true; RefreshBindLabel(); }
-        } catch (Exception e) { Debug.LogError(e.Message); }
+        } catch (Exception e) { AppLog.Error(e.Message); }
     }
     void RefreshBindLabel()
     {
@@ -245,7 +247,9 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         technique.skills[slot] = id; if (id != 0 && technique.levels[slot] < 1) technique.levels[slot] = 1;
         changed?.Invoke(); if (close) Close();
     }
-    public async void OnClickAutoTranslate()
+    public void OnClickAutoTranslate() => Loading.RunTask(OnClickAutoTranslateCore, "LoadingTranslate", () => modeTranslation?.Cancel());
+
+    async System.Threading.Tasks.Task OnClickAutoTranslateCore()
     {
         if (category != 8 || draft == null || modeTranslation != null) return;
         var target = draft; string source = modeLocale, text = modeNameInput.text;
@@ -254,13 +258,13 @@ public sealed class CharacterSkillPanelController : MonoBehaviour
         try {
             var result = await AutoTranslationService.TranslateAsync(new Dictionary<string, string> { { "name", text } }, source,
                 modeLocaleButtons.Select(b => ModeLocale(b.name)), cancellation.Token,
-                message => Debug.Log("[AutoTranslate][模式名稱] " + message));
-            if (this == null || cancellation.IsCancellationRequested || !ReferenceEquals(draft, target) || isCurrent?.Invoke() != true) { Debug.Log("[AutoTranslate][模式名稱] 已取消或切換設定，結果未套用。"); return; }
+                message => { Loading.UpdateText(message); AppLog.Info("[AutoTranslate][模式名稱] " + message); });
+            if (this == null || cancellation.IsCancellationRequested || !ReferenceEquals(draft, target) || isCurrent?.Invoke() != true) { AppLog.Info("[AutoTranslate][模式名稱] 已取消或切換設定，結果未套用。"); return; }
             foreach (var localeResult in result) target.SetModeName(localeResult.Key, localeResult.Value["name"]);
             Commit(target.auraId, target, false);
-            Debug.Log("[AutoTranslate][模式名稱] 已套用其他語系；來源語系保留。");
-        } catch (OperationCanceledException) { Debug.Log("[AutoTranslate][模式名稱] 已取消，未套用部分結果。"); }
-        catch (Exception e) { if (this != null) Debug.LogError(LocalizationManager.GetText("AutoTranslateFailed") + ": " + e.Message); }
+            AppLog.Info("[AutoTranslate][模式名稱] 已套用其他語系；來源語系保留。");
+        } catch (OperationCanceledException) { AppLog.Info("[AutoTranslate][模式名稱] 已取消，未套用部分結果。"); }
+        catch (Exception e) { if (this != null) AppLog.Error(LocalizationManager.GetText("AutoTranslateFailed") + ": " + e.Message); }
         finally {
             if (ReferenceEquals(modeTranslation, cancellation)) modeTranslation = null;
             cancellation.Dispose(); if (this != null) RefreshModeName();
