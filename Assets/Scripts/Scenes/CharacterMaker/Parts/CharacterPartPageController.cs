@@ -8,6 +8,7 @@ public abstract class CharacterPartPageController : MonoBehaviour
     public CharacterManager manager;
     public Transform transformInputParent;
     public RawImage textureImage, ocImage, spmImage;
+    public Button importFbxButton, exportFbxButton;
     public abstract int Option { get; }
     readonly InputField[] inputs = new InputField[9];
     bool initialized;
@@ -17,6 +18,8 @@ public abstract class CharacterPartPageController : MonoBehaviour
         manager = owner;
         if (initialized) return;
         initialized = true;
+        if (importFbxButton != null) importFbxButton.onClick.AddListener(() => manager.fbxController.Open(Option));
+        if (exportFbxButton != null) exportFbxButton.onClick.AddListener(() => manager.fbxController.Export(Option));
         if (transformInputParent == null) return;
         for (int group = 0; group < 3; group++)
         {

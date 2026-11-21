@@ -25,11 +25,12 @@ namespace G4Composition
         {
             int start = Section(field); Reader.Range(start, length); return Metadata.Skip(start).Take(length).ToArray();
         }
-        public static RawHeadAsset Read(string common, string dx11, string relative, CancellationToken token)
+        public static RawHeadAsset Read(string common, string dx11, string relative, CancellationToken token,
+            byte[] metadataOverride = null, byte[] geometryOverride = null)
         {
             string face = Path.Combine(common, "chr", "_face"), path = Path.GetFullPath(Path.Combine(face, relative));
             if (!path.StartsWith(face.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Model path outside head directory.");
-            var asset = new RawHeadAsset { RelativePath = relative, ModelPath = path, Metadata = File.ReadAllBytes(path), Geometry = File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")) };
+            var asset = new RawHeadAsset { RelativePath = relative, ModelPath = path, Metadata = metadataOverride ?? File.ReadAllBytes(path), Geometry = geometryOverride ?? File.ReadAllBytes(Path.ChangeExtension(path, ".g4mg")) };
             asset.Preview = G4ModelParser.Parse(asset.Metadata, asset.Geometry, path, token);
             var b = asset.Reader; int table = b.U16(4), count = b.U16(0x20), cursor = table + count * 0x50;
             for (int i = 0; i < b.U8(0x26); i++)

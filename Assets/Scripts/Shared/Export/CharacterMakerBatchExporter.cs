@@ -36,6 +36,7 @@ public sealed class CharacterMakerBatchExporter
         var avatars = new Dictionary<string, RawHeadAsset>(StringComparer.Ordinal);
         RawHeadAsset ResolveSource(CharacterMakerPart part)
         {
+            if (part.fbx != null && !part.fbx.IsEmpty) return CharacterFbxAsset.Read(part);
             if (string.IsNullOrWhiteSpace(part.avatarCode)) return Read(FindFaceModel(part.sourceId));
             var recipe = AvatarRecipeParser.Parse(part.avatarCode);
             if (part.sourceId != AvatarCompositionAsset.SourceId(recipe.Code)) throw new InvalidDataException("Avatar 編號與來源 ID 不符。");
@@ -52,7 +53,7 @@ public sealed class CharacterMakerBatchExporter
         ResolvePart(saved, saved.hair, hair, 2, targetAnchor);
         if (other != null) ResolvePart(saved, saved.other, other, 3, targetAnchor);
         saved.uniformHem = saved.Hem;
-        saved.version = 15;
+        saved.version = 16;
 
         var sources = new Dictionary<string, RawHeadAsset>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in new[] { target, head, hair }) sources[source.RelativePath] = source;
@@ -197,7 +198,7 @@ public sealed class CharacterMakerBatchExporter
 
     private static void ValidateDocument(CharacterMakerDocument saved)
     {
-        if (saved == null || saved.version < 1 || saved.version > 15) throw new InvalidDataException("不支援的存檔版本。");
+        if (saved == null || saved.version < 1 || saved.version > 16) throw new InvalidDataException("不支援的存檔版本。");
         if (saved.uniformSleeve < 0 || saved.uniformSleeve > 1 || saved.Hem < 0 || saved.Hem > 2) throw new InvalidDataException("無效的袖子或下擺設定。");
         if (!SafeId(saved.targetId) || !SafeId(saved.head?.sourceId) || !SafeId(saved.hair?.sourceId))
             throw new InvalidDataException("目標、Head 或 Hair 的角色 ID 無效。");
@@ -210,7 +211,7 @@ public sealed class CharacterMakerBatchExporter
     private static bool SafeId(string value) => !string.IsNullOrWhiteSpace(value) && Regex.IsMatch(value, @"^[A-Za-z0-9_]+$");
     private RawHeadAsset Read(string relative) => RawHeadAsset.Read(DumpDataManager.CommonPath, DumpDataManager.Dx11Path, relative, CancellationToken.None);
 
-    private static string FindFaceModel(string id)
+    internal static string FindFaceModel(string id)
     {
         if (!DumpDataManager.ValidateSavedPath()) throw new InvalidDataException("Dump 路徑無效：" + DumpDataManager.LastError);
         foreach (string series in SeriesNames)

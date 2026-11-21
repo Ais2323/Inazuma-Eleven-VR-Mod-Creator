@@ -75,11 +75,13 @@ public sealed class CharacterMakerDocument
     public static CharacterMakerDocument Read(string path)
     {
         CharacterMakerDocument document = JsonUtility.FromJson<CharacterMakerDocument>(File.ReadAllText(path));
-        if (document == null || document.version < 1 || document.version > 15)
+        if (document == null || document.version < 1 || document.version > 16)
             throw new InvalidDataException("不支援的 CharacterMaker 存檔版本。");
         document.head ??= new CharacterMakerPart();
         document.hair ??= new CharacterMakerPart();
         document.other ??= new CharacterMakerPart();
+        foreach (var part in new[] { document.head, document.hair, document.other })
+            if (part.fbx != null && !part.fbx.IsEmpty) part.fbx.Validate();
         document.textures ??= new List<CharacterMakerTexture>();
         return document;
     }
@@ -93,6 +95,7 @@ public sealed class CharacterMakerDocument
 [Serializable]
 public sealed class CharacterMakerPart
 {
+    public UniformFbxModel fbx;
     public string sourceId;
     public string avatarCode;
     public Vector3 position;

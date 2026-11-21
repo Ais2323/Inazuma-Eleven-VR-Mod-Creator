@@ -70,6 +70,7 @@ public partial class CharacterManager : MonoBehaviour
     public CharacterSelectionController selectionController;
     public CharacterVoiceController voiceController;
     public CharacterIconController iconController;
+    public CharacterFbxController fbxController;
 
     void Awake()
     {
@@ -97,6 +98,7 @@ public partial class CharacterManager : MonoBehaviour
     internal void RefreshPageAvailability()
     {
         selectionController.RefreshAvailability(); infoPage.RefreshAvailability(); voiceController.RefreshVoicePreviewButton();
+        if(fbxController!=null)fbxController.RefreshAvailability();
     }
     internal bool HasAvatarInfo() => avatarSetting != null && avatarSetting.targetModel != null &&
         avatarSetting.targetModel.transform.childCount > 0 && !string.IsNullOrWhiteSpace(avatarSetting.nowAvatarCode);

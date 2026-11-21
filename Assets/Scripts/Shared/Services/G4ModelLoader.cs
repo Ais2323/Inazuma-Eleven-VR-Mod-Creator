@@ -21,7 +21,7 @@ public static class G4ModelLoader
         bool headLocalSkinning = true,
         AvatarBoneTransform rigidAttachment = null,
         byte[] metadataOverride = null, byte[] geometryOverride = null,
-        Action<MeshFilter, int> meshCreated = null)
+        Action<MeshFilter, int> meshCreated = null, byte[] textureContainerOverride = null)
     {
         // ??頝臬?
         var modelRoot = Path.Combine(DumpDataManager.CommonPath, modelPath);
@@ -38,7 +38,7 @@ public static class G4ModelLoader
         var warnings = new List<string>();
         if (textureName == null) textureName = modelName;
         var textures = loadTextures ? G4TextureParser.Parse(
-            File.ReadAllBytes(Path.Combine(textureRoot, $"{textureName}.g4tx")),
+            textureContainerOverride ?? File.ReadAllBytes(Path.Combine(textureRoot, $"{textureName}.g4tx")),
             textureRoot,
             warnings,
             default,

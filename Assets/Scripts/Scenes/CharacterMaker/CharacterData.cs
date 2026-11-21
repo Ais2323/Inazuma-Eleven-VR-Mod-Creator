@@ -15,6 +15,7 @@ public class CharacterData
     public string voiceCharacterId, voiceAvatarCode, voiceName, voicePortraitPng;
     public List<CharacterVoiceOverride> voiceOverrides = new();
     public string headId;
+    public UniformFbxModel headFbx, hairFbx, otherFbx;
     public string headAvatarCode;
     public Transform[] head;
     public string hairId;
@@ -89,6 +90,7 @@ public class CharacterData
 
     private void SetHead(Transform tr)
     {
+        headFbx = null;
         destroyFunc.Invoke(head);
         headAvatarCode = null;
         headId = tr.name;
@@ -109,6 +111,7 @@ public class CharacterData
 
     private void SetHair(Transform tr)
     {
+        hairFbx = null;
         destroyFunc.Invoke(hair);
         hairAvatarCode = null;
         hairId = tr.name;
@@ -129,6 +132,7 @@ public class CharacterData
 
     private void SetOther(Transform tr)
     {
+        otherFbx = null;
         destroyFunc.Invoke(other);
         otherAvatarCode = null;
         otherId = null;

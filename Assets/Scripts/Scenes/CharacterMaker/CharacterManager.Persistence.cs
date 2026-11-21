@@ -27,7 +27,7 @@ public partial class CharacterManager : MonoBehaviour
         {
             var document = new CharacterMakerDocument
             {
-                version = 15,
+                version = 16,
                 targetId = nowCharacterData.id,
                 isNewCharacter = string.IsNullOrWhiteSpace(nowCharacterData.id),
                 templateId = nowCharacterData.TemplateId, newCharacterKey = nowCharacterData.newCharacterKey,
@@ -102,9 +102,9 @@ public partial class CharacterManager : MonoBehaviour
                 try { avatarSetting.RestoreState(document.avatarCode, document.avatarInput); }
                 catch (Exception exception) { warnings.Add("Avatar 設定：" + exception.Message); }
             }
-            RestoreSavedModel(1, document.head?.sourceId, warnings, document.head?.avatarCode);
-            RestoreSavedModel(2, document.hair?.sourceId, warnings, document.hair?.avatarCode);
-            RestoreSavedModel(3, document.other?.sourceId, warnings, document.other?.avatarCode);
+            RestoreSavedModel(1, document.head?.sourceId, warnings, document.head?.avatarCode, document.head?.fbx);
+            RestoreSavedModel(2, document.hair?.sourceId, warnings, document.hair?.avatarCode, document.hair?.fbx);
+            RestoreSavedModel(3, document.other?.sourceId, warnings, document.other?.avatarCode, document.other?.fbx);
             RefreshPageAvailability();
 
             RestoreSavedTransform(1, document.head, warnings);
@@ -148,6 +148,7 @@ public partial class CharacterManager : MonoBehaviour
         return new CharacterMakerPart
         {
             sourceId = sourceId,
+            fbx = GetFbx(option)?.Clone(),
             avatarCode = GetAvatarSource(option),
             position = position,
             rotation = rotation,
@@ -163,7 +164,7 @@ public partial class CharacterManager : MonoBehaviour
         return !string.IsNullOrWhiteSpace(id) && Regex.IsMatch(id, @"^[A-Za-z0-9_]+$");
     }
 
-    private bool RestoreSavedModel(int option, string sourceId, List<string> warnings, string avatarCode = null)
+    private bool RestoreSavedModel(int option, string sourceId, List<string> warnings, string avatarCode = null, UniformFbxModel fbx = null)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
         {
@@ -178,6 +179,7 @@ public partial class CharacterManager : MonoBehaviour
                 else if (option == 2) { nowCharacterData.hair = Array.Empty<Transform>(); nowCharacterData.hairId = null; }
                 else { nowCharacterData.other = Array.Empty<Transform>(); nowCharacterData.otherId = null; }
                 SetAvatarSource(option, null);
+                SetFbx(option, null);
             }
             return false;
         }
@@ -190,7 +192,12 @@ public partial class CharacterManager : MonoBehaviour
         GameObject loaded = null;
         try
         {
-            if (!string.IsNullOrWhiteSpace(avatarCode))
+            if (fbx != null && !fbx.IsEmpty)
+            {
+                loaded = CharacterFbxAsset.Preview(CharacterFbxAsset.Read(new CharacterMakerPart { sourceId = sourceId, avatarCode = avatarCode, fbx = fbx }), sourceId);
+                CenterSelectionPreview(loaded.transform);
+            }
+            else if (!string.IsNullOrWhiteSpace(avatarCode))
             {
                 if (option == 0) throw new InvalidDataException("替換角色不能使用 Avatar。");
                 var recipe = AvatarRecipeParser.Parse(avatarCode);
@@ -222,6 +229,7 @@ public partial class CharacterManager : MonoBehaviour
             loaded.transform.SetParent(target, false);
             nowCharacterData.SetData(option, loaded.transform);
             SetAvatarSource(option, avatarCode);
+            SetFbx(option, fbx?.Clone());
 
             if (option == 0)
             {
