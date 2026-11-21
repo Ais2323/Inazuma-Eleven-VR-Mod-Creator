@@ -34,8 +34,9 @@ public sealed class PortableLocalizationBuild : IPostprocessBuildWithReport
         foreach (var file in files)
         {
             string destination = Path.Combine(target, file.Key);
-            if (!File.Exists(destination)) File.Copy(file.Value, destination);
+            File.Copy(file.Value, destination, overwrite: true);
         }
+        Debug.Log($"[Build] Synchronized {files.Count} localization file(s) to {target}");
         // Never ship Assets/setting.json: it contains this developer's personal paths.
         // SettingManager creates setting.json next to the executable on first use.
     }
