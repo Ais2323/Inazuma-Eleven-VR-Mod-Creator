@@ -28,7 +28,7 @@ public static partial class UniformMakerExporter
 
     // Convert only the uniform edits into declarations. The framework appends
     // referenced rows and rebuilds lookup indexes after merging all mods.
-    internal static void WriteFantasyUniformResources(string data, string modRoot, string modName)
+    internal static void WriteFantasyUniformResources(string data, string modRoot, string modName, bool preserveCharacterData = false)
     {
         string directory = Path.Combine(data, "common", "gamedata", "character");
         if (!Directory.Exists(directory)) return;
@@ -72,7 +72,7 @@ public static partial class UniformMakerExporter
         FantasyWrite(modRoot, "content/looks/uniforms.toml", looks);
         File.Delete(configPath);
         File.Delete(partsPath);
-        FantasyItems(data, modRoot, modName);
+        FantasyItems(data, modRoot, modName, preserveCharacterData);
     }
 
     static void FantasyKits(string path, StringBuilder looks)
@@ -119,7 +119,7 @@ public static partial class UniformMakerExporter
         }
     }
 
-    static void FantasyItems(string data, string modRoot, string modName)
+    static void FantasyItems(string data, string modRoot, string modName, bool preserveCharacterData)
     {
         string nativeDirectory = Path.Combine(DumpDataManager.CommonPath, "gamedata", "item");
         string nativePath = CharacterIdentityCatalog.Find(nativeDirectory, "item_config_");
@@ -148,9 +148,9 @@ public static partial class UniformMakerExporter
         if (changed.Length > 0) FantasyWrite(modRoot, "content/base_tables/gamedata/item/item_config.toml", definitions);
         FantasyItemTexts(data, modRoot, changed.SelectMany(row => new[] { row.UInt(2), row.UInt(3) }).Where(id => id != 0).Distinct());
         FantasyItemIcons(data, modRoot, modName);
-        if (Directory.Exists(directory)) foreach (string file in Directory.GetFiles(directory, "item_config_*.cfg.bin")) File.Delete(file);
+        if (!preserveCharacterData && Directory.Exists(directory)) foreach (string file in Directory.GetFiles(directory, "item_config_*.cfg.bin")) File.Delete(file);
         string shopDirectory = Path.Combine(data, "common", "gamedata", "shop");
-        if (Directory.Exists(shopDirectory)) foreach (string file in Directory.GetFiles(shopDirectory, "shop_config_*.cfg.bin")) File.Delete(file);
+        if (!preserveCharacterData && Directory.Exists(shopDirectory)) foreach (string file in Directory.GetFiles(shopDirectory, "shop_config_*.cfg.bin")) File.Delete(file);
     }
 
     static void FantasyItemTexts(string data, string modRoot, IEnumerable<uint> ids)

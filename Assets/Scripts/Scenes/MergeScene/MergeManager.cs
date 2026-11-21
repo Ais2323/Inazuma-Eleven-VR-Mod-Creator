@@ -110,7 +110,9 @@ public class MergeManager : MonoBehaviour
             string data = Path.Combine(stage, "data");
             Directory.CreateDirectory(data);
             bool viola = exportType == ModExportType.Viola;
-            if (characters.Length > 0) CharacterMakerExportBatch.Export(characters, data, modName, writeRegistry: viola);
+            string[] characterIds = characters.Length > 0
+                ? CharacterMakerExportBatch.Export(characters, data, modName, writeRegistry: viola)
+                : Array.Empty<string>();
             if (kits.Length > 0) UniformMakerExporter.Export(kits, data, modName, writeRegistry: viola);
             if (viola) {
                 var metadata = new JObject { ["Name"] = modName, ["Author"] = "", ["ModVersion"] = "1.0", ["GameVersion"] = "", ["ModLink"] = "" };
@@ -118,8 +120,10 @@ public class MergeManager : MonoBehaviour
             }
             else {
                 UniformMakerExporter.WriteFantasyShop(kits, data, stage, modName);
-                if (kits.Length > 0 && characters.Length == 0)
-                    UniformMakerExporter.WriteFantasyUniformResources(data, stage, modName);
+                if (kits.Length > 0)
+                    UniformMakerExporter.WriteFantasyUniformResources(data, stage, modName, preserveCharacterData: characters.Length > 0);
+                if (characters.Length > 0)
+                    CharacterFantasyExporter.WriteResources(characters, characterIds, data, stage);
                 WriteFantasyPackage(stage, data, prefix, modName);
             }
             // A newly owned staging folder is moved into a checked sibling, never an existing mod.
@@ -156,8 +160,15 @@ public class MergeManager : MonoBehaviour
         string manifest = "id = " + Quote(id) + "\nname = " + Quote(name) + "\nversion = \"1.0.0\"\nauthor = \"\"\n" +
             "description = \"Created with Inazuma Eleven VR Mod Creator\"\npriority = 0\nloader_min = \"2.0.0\"\n" +
             "prefix = " + Quote(id) + "\nfolder = " + Quote(id) + "\n";
-        if (File.Exists(Path.Combine(stage, "content", "shops", "uniforms.toml")))
-            manifest += "requires = [\"VRFW>=0.2.4\"]\noptional = [\"InazumaFantasy\"]\n";
+        // Overlay assets alone do not opt a Mod into execution of Lua patches.
+        // Declare both the bridge module and root whenever we emit menu code.
+        string luaRoot = Path.Combine(stage, "assets", "lua");
+        bool hasLua = Directory.Exists(luaRoot) && Directory.GetFiles(luaRoot, "*.lua", SearchOption.AllDirectories).Length > 0;
+        if (Directory.Exists(Path.Combine(stage, "content")))
+            manifest += "requires = [\"VRFW>=0.2.4\"]\noptional = " +
+                (hasLua ? "[\"InazumaFantasy\", \"BetterQoL\", \"ClassicRecruitment\"]" : "[\"InazumaFantasy\"]") + "\n";
+        if (hasLua)
+            manifest += "loader_modules = [\"lua_bridge\"]\nlua_roots = [\"assets/lua\"]\n";
         File.WriteAllText(Path.Combine(stage, "mod.toml"), manifest, new UTF8Encoding(false));
     }
 
