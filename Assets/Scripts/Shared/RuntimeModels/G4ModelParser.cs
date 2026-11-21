@@ -27,7 +27,9 @@ namespace G4Runtime
             public int Material;
             public Vector3[] Positions, Normals;
             public Vector2[] UV;
+            public Vector2[][] ExtraUV;
             public Color32[] Colors;
+            public Vector4[] EffectControls;
             public int[] Indices;
             public uint[] BonePalette;
             public byte[,] BoneIndices;
@@ -151,15 +153,28 @@ namespace G4Runtime
                 int nodeIndex = md.U16(o + 0x38);
                 if (nodeIndex >= md.U16(0x24)) throw new InvalidDataException(source + ": invalid mesh node index.");
                 var part = new Part { SourceMeshIndex = i, NodeHash = md.U32(bias + md.U16(0x74) * 4 + nodeIndex * 4), Name = meshNames[i], Material = mat, Positions = new Vector3[vc], Normals = new Vector3[vc], UV = new Vector2[vc], Colors = new Color32[vc], Indices = new int[ic] };
+                part.ExtraUV = new Vector2[5][];
+                for (int channel = 0; channel < part.ExtraUV.Length; channel++)
+                    if (layout.TryGetValue(11 + channel, out var extra)) {
+                        if (extra.Offset + UVSize(extra.Format) > stride) throw new InvalidDataException(source + ": UV element overruns stride.");
+                        part.ExtraUV[channel] = new Vector2[vc];
+                    }
                 foreach (var e in layout.Values) if (e.Offset >= stride) throw new InvalidDataException(source + ": vertex element outside stride.");
                 layout.TryGetValue(2, out var normal); bool hasNormal = layout.ContainsKey(2);
                 layout.TryGetValue(10, out var uv); bool hasUV = layout.ContainsKey(10);
                 layout.TryGetValue(8, out var color); bool hasColor = layout.ContainsKey(8);
-                layout.TryGetValue(5, out var weights); bool hasWeights = layout.ContainsKey(5) && weights.Format == 32;
-                layout.TryGetValue(6, out var bones); bool hasBones = layout.ContainsKey(6) && bones.Format == 24;
+                layout.TryGetValue(9, out var controls); bool hasControls = layout.ContainsKey(9);
+                if (hasControls) {
+                    if (controls.Offset + 4 > stride) throw new InvalidDataException(source + ": effect controls overrun stride.");
+                    part.EffectControls = new Vector4[vc];
+                }
+                layout.TryGetValue(5, out var weights); bool hasWeights = layout.ContainsKey(5);
+                layout.TryGetValue(6, out var bones); bool hasBones = layout.ContainsKey(6);
+                int influences = hasWeights && weights.Format == 32 && bones.Format == 24 ? 8 :
+                    hasWeights && weights.Format == 16 && bones.Format == 8 ? 4 : 0;
                 if (hasNormal && normal.Offset + 8 > stride || hasColor && color.Offset + 4 > stride || hasUV && uv.Offset + UVSize(uv.Format) > stride)
                     throw new InvalidDataException(source + ": vertex element overruns stride.");
-                if (hasWeights != hasBones || hasWeights && (weights.Offset + 16 > stride || bones.Offset + 8 > stride))
+                if (hasWeights != hasBones || hasWeights && (influences == 0 || weights.Offset + influences * 2 > stride || bones.Offset + influences > stride))
                     throw new InvalidDataException(source + ": unsupported skin layout.");
                 int paletteCount = (md.U16(o + 0x3c) & 0x100) != 0 ? md.U8(o + 0x3c) : 0;
                 if (hasWeights)
@@ -187,8 +202,14 @@ namespace G4Runtime
                         part.Normals[v] = new Vector3(Snorm(mg.I16(n)), Snorm(mg.I16(n + 2)), -Snorm(mg.I16(n + 4)));
                     }
                     if (hasUV) part.UV[v] = ReadUV(mg, p + uv.Offset, uv.Format);
+                    for (int channel = 0; channel < part.ExtraUV.Length; channel++)
+                        if (part.ExtraUV[channel] != null) {
+                            var extra = layout[11 + channel];
+                            part.ExtraUV[channel][v] = ReadUV(mg, p + extra.Offset, extra.Format);
+                        }
                     part.Colors[v] = hasColor ? new Color32(mg.U8(p + color.Offset), mg.U8(p + color.Offset + 1), mg.U8(p + color.Offset + 2), mg.U8(p + color.Offset + 3)) : new Color32(255, 255, 255, 255);
-                    if (hasWeights) for (int influence = 0; influence < 8; influence++)
+                    if (hasControls) part.EffectControls[v] = new Vector4(mg.U8(p + controls.Offset), mg.U8(p + controls.Offset + 1), mg.U8(p + controls.Offset + 2), mg.U8(p + controls.Offset + 3)) / 255f;
+                    if (hasWeights) for (int influence = 0; influence < influences; influence++)
                     {
                         part.BoneWeights[v, influence] = mg.U16(p + weights.Offset + influence * 2);
                         byte localBone = mg.U8(p + bones.Offset + influence);

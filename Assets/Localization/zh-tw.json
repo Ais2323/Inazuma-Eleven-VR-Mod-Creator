@@ -238,5 +238,11 @@
         "ModExportType": "輸出類型",
         "ModName": "模組名稱",
         "ModNamePlaceholder": "請輸入模組名稱"
+    },
+    "HissatsuScene": {
+        "HissatsuPlay": "播放",
+        "HissatsuPause": "暫停",
+        "HissatsuStadiumLoading": "讀取球場中…",
+        "HissatsuCatalogLoading": "讀取必殺技資料中…"
     }
 }

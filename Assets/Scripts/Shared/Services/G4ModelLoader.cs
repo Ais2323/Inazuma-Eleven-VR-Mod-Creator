@@ -80,6 +80,8 @@ public static class G4ModelLoader
             mesh.name = part.Name;
             mesh.vertices = part.Positions;
             mesh.uv = part.UV;
+            if (part.ExtraUV != null) for (int channel = 0; channel < part.ExtraUV.Length; channel++)
+                if (part.ExtraUV[channel] != null) mesh.SetUVs(channel + 1, part.ExtraUV[channel]);
             mesh.colors32 = part.Colors;
             mesh.triangles = part.Indices;
             if (part.Normals != null) mesh.normals = part.Normals;
