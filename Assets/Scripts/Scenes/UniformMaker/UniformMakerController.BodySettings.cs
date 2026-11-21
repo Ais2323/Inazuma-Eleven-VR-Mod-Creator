@@ -12,70 +12,7 @@ public sealed partial class UniformMakerController
     public Toggle shareAwayModelsToggle;
     public Toggle lockEquipmentShoesToggle;
     bool lockEquipmentShoes;
-    public Button shareBodyTexturesButton;
-    public Button shareAllVariantsButton;
     bool shareAwayModels;
-
-    public void OnClickShareAllVariants() => Loading.Perform(() => OnClickShareAllVariantsCore(), "LoadingCopy");
-
-    void OnClickShareAllVariantsCore()
-    {
-        if (CurrentEdit == null) return;
-        UpdateNameColor();
-        CloseFbxBindings();
-        CloseModelSelect();
-        string prefix = catalog.Entries[selected].Id + "/";
-        string sourcePrefix = prefix + side + "/" + role + "/";
-        string modelPrefix = prefix + (shareAwayModels ? 0 : side) + "/" + role + "/";
-        var copies = new Dictionary<string, KitEdit>();
-        KitEdit Find(string key, int attribute) => kitEdits.TryGetValue(key + attribute, out var edit) ? edit :
-            kitEdits.TryGetValue(key + "-1", out var legacy) ? legacy : null;
-        for (int attribute = 0; attribute < 18; attribute++) {
-            var body = catalog.BodyByAttribute(attribute);
-            if (body == null || body.Int(4) != attribute) continue;
-            var source = Find(sourcePrefix, attribute) ?? new KitEdit();
-            var models = Find(modelPrefix, attribute) ?? new KitEdit();
-            // Retail alternate body attributes can inherit an already configured
-            // model. Resolve that before making the destination record explicit.
-            if (!HasKitModelChanges(models))
-                models = NativeBodyTypes.EquivalentAttributes(body).Select(a => Find(modelPrefix, a))
-                    .FirstOrDefault(e => e != null && HasKitModelChanges(e)) ?? models;
-            var copy = CloneKitEdit(source, models);
-            if (sourcePrefix == modelPrefix && !HasKitModelChanges(source)) {
-                if (source.Textures.Count == 0)
-                    foreach (var texture in models.Textures) copy.Textures.Add(texture.Key, texture.Value.Copy());
-                if (source.Portraits.Count == 0 && source.PortraitMasks.Count == 0 && !source.InheritPortraitCollar && !source.InheritPortraitSleeve) {
-                    copy.InheritPortraitCollar = models.InheritPortraitCollar; copy.InheritPortraitSleeve = models.InheritPortraitSleeve;
-                    foreach (var portrait in models.Portraits) copy.Portraits.Add(portrait.Key, portrait.Value);
-                    foreach (var mask in models.PortraitMasks) copy.PortraitMasks.Add(mask.Key, mask.Value);
-                }
-            }
-            // Preserve source native defaults rather than the destination's
-            // original keeper/away model when no explicit override was selected.
-            if (copy.Clothes == 0) copy.Clothes = catalog.Entries[selected].Models[shareAwayModels ? 0 : side, role];
-            if (copy.Gloves == 0) copy.Gloves = catalog.Entries[selected].Gloves[shareAwayModels ? 0 : side];
-            copies.Add(attribute.ToString(), copy);
-        }
-        try {
-            for (int targetSide = 0; targetSide < 2; targetSide++)
-                for (int targetRole = 0; targetRole < 2; targetRole++) {
-                    if (targetSide == side && targetRole == role) continue;
-                    string targetPrefix = prefix + targetSide + "/" + targetRole + "/";
-                    foreach (string key in kitEdits.Keys.Where(k => k.StartsWith(targetPrefix, StringComparison.Ordinal)).ToArray()) {
-                        foreach (var texture in kitEdits[key].Textures.Values) texture.Release();
-                        kitEdits.Remove(key);
-                    }
-                    foreach (var copy in copies) kitEdits.Add(targetPrefix + copy.Key, CloneKitEdit(copy.Value, copy.Value));
-                }
-        }
-        finally { foreach (var copy in copies.Values) foreach (var texture in copy.Textures.Values) texture.Release(); }
-        selections.Clear();
-        RefreshButtons();
-    }
-
-    static bool HasKitModelChanges(KitEdit edit) => edit.Clothes != 0 || edit.Armband != 0 || edit.Gloves != 0 ||
-        edit.Skin != 0 || edit.Number != 0 || edit.Name != 0 || edit.Fbx != null || edit.PartFbx.Count > 0 ||
-        edit.HideSkin || edit.HideNumber || edit.HideArmband || edit.HideGloves || edit.HideName || edit.HideUpper || edit.HideLower;
 
     static KitEdit CloneKitEdit(KitEdit source, KitEdit models)
     {
@@ -94,49 +31,17 @@ public sealed partial class UniformMakerController
         return copy;
     }
 
-    public void OnClickShareBodyTextures() => Loading.Perform(() => OnClickShareBodyTexturesCore(), "LoadingCopy");
-
-    void OnClickShareBodyTexturesCore()
-    {
-        if (CurrentEdit == null) return;
-        UpdateNameColor();
-        var source = CurrentEdit;
-        var editable = source.Textures.Where(p => !p.Key.StartsWith("Name/", StringComparison.Ordinal)).ToArray();
-        bool shareNameColor = CanEditNameColor;
-        if (editable.Length == 0 && !shareNameColor) return;
-        foreach (var texture in editable) texture.Value.SharedAcrossBodies = true;
-        for (int attribute = 0; attribute < 18; attribute++) {
-            var body = catalog.BodyByAttribute(attribute);
-            if (body == null || body.Int(4) != attribute || !NativeBodyTypes.AllowsGender(body, gender)) continue;
-            string key = catalog.Entries[selected].Id + "/" + side + "/" + role + "/" + attribute;
-            if (!kitEdits.TryGetValue(key, out var target)) kitEdits.Add(key, target = new KitEdit());
-            if (ReferenceEquals(source, target)) continue;
-            if (shareNameColor) {
-                target.HasNameColor = source.HasNameColor; target.NameColor = source.NameColor;
-            }
-            if (editable.Length > 0) {
-                foreach (var old in target.Textures.Keys.Where(k => !k.StartsWith("Name/", StringComparison.Ordinal)).ToArray()) {
-                    target.Textures[old].Release(); target.Textures.Remove(old);
-                }
-                foreach (var texture in editable) target.Textures.Add(texture.Key, texture.Value.Copy());
-            }
-        }
-        RefreshButtons();
-        AppLog.Info("[UniformMaker] Applied current kit textures and enabled name color to all body types of gender " + gender + ".", this);
-    }
-
     readonly List<Button> bodyButtons = new(), collarButtons = new(), sleeveButtons = new(), hemButtons = new(), chestButtons = new();
     readonly List<Button> genderButtons = new();
     int bodyType = 1, gender = 1, collar, sleeve, hem, chestSize = -1;
     Color appliedSkinColor;
-    CfgTable.Row CurrentBody => catalog?.BodyForType(bodyType, gender);
+    CfgTable.Row CurrentBody => copyContextBody ?? catalog?.BodyForType(bodyType, gender);
     Color SelectedSkinColor => skinColor != null ? skinColor.color : new Color32(255, 228, 208, 255);
 
     void InitializeBodySettings()
     {
+        InitializeCopyPanel();
         if (lockEquipmentShoesToggle != null) lockEquipmentShoesToggle.onValueChanged.AddListener(value => lockEquipmentShoes = value);
-        if (shareBodyTexturesButton != null) shareBodyTexturesButton.onClick.AddListener(OnClickShareBodyTextures);
-        if (shareAllVariantsButton != null) shareAllVariantsButton.onClick.AddListener(OnClickShareAllVariants);
         if (shareAwayModelsToggle != null) shareAwayModelsToggle.onValueChanged.AddListener(value => Loading.Perform(() => {
             if (shareAwayModels == value) return;
             shareAwayModels = value; RebuildBodyPreview();
@@ -214,8 +119,7 @@ public sealed partial class UniformMakerController
             lockEquipmentShoesToggle.interactable = catalog != null && selected >= 0;
         }
         if (shareAwayModelsToggle != null) shareAwayModelsToggle.SetIsOnWithoutNotify(shareAwayModels);
-        if (shareBodyTexturesButton != null) shareBodyTexturesButton.interactable = catalog != null && selected >= 0;
-        if (shareAllVariantsButton != null) shareAllVariantsButton.interactable = catalog != null && selected >= 0;
+        if (copyOpenButton != null) copyOpenButton.interactable = catalog != null && selected >= 0;
         SetButtons(genderButtons, gender - 1, _ => catalog != null);
         SetButtons(bodyButtons, bodyType - 1, i => catalog != null && catalog.BodyForType(i + 1, gender) != null);
         SetButtons(collarButtons, collar, _ => selected >= 0);

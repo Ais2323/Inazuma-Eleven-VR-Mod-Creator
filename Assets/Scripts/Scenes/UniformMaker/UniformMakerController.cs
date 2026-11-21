@@ -98,6 +98,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
         if (model != null && appliedNumber != Mathf.Clamp(uniformNumber, 0, 99)) ApplyNumber();
         if (catalog == null || locale == UniformCatalog.Locale) return;
         locale = UniformCatalog.Locale;
+        RefreshCopySource();
         for (int i = 0; i < items.Count; i++)
             items[i].GetComponentInChildren<Text>(true).text = catalog.Name(catalog.Entries[i], locale);
     }
@@ -106,6 +107,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
 
     void SelectUniformCore(int index)
     {
+        CloseCopyPanel();
         if (catalog == null || index < 0 || index >= catalog.Entries.Count) return;
         CloseFbxBindings();
         DisposePartEditor();
@@ -127,6 +129,7 @@ public sealed partial class UniformMakerController : MonoBehaviour
 
     public void OnClickAdd()
     {
+        CloseCopyPanel();
         if (catalog == null || selected < 0 || isNewUniform) return;
         CloseFbxBindings();
         CloseModelSelect();
