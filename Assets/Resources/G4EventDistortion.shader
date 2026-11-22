@@ -23,10 +23,12 @@ Shader "CharMaker/G4EventDistortion"
         _Pattern ("Animated pattern atlas", Float) = 0
         _SolidToon ("Solid toon surface", Float) = 0
         _ZWrite ("Depth write", Float) = 0
+        _BlendOp ("Native blend operation", Float) = 0
         _Cull ("Cull mode", Float) = 0
         _ZTest ("Depth test", Float) = 4
         _Family ("Native material family", Float) = 0
         _Flow ("Threshold flow map", Float) = 0
+        _DistortionBlur ("Distortion blur variant", Float) = 1
         _Tex3 ("Sampler 3", 2D) = "white" {}
         _Tex4 ("Sampler 4", 2D) = "white" {}
         _Tex5 ("Sampler 5", 2D) = "white" {}

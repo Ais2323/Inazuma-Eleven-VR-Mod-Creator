@@ -14,13 +14,15 @@ internal sealed class HissatsuActor
     readonly Matrix4x4[] inverse,rest,local,matrices,skin;
     readonly bool[] done;
     readonly bool[] animated;
-    readonly Vector3[] animatedPosition,animatedScale;
+    readonly Vector3[] animatedPosition,animatedScale,restScale;
     readonly Quaternion[] animatedRotation;
     readonly bool cumulativeScale;
+    readonly byte[] billboardBones;
     readonly List<Skin> skins=new();
     readonly List<Material> materials=new();
     readonly Dictionary<Material,Vector2> uvOffsets=new();
     readonly Dictionary<Material,Color> colors=new();
+    readonly Dictionary<Material,Vector4> ambientColors=new();
     readonly Dictionary<uint,List<(Material material,int slot)>> uvTargets=new();
     readonly Dictionary<Material,Vector4[]> uvRows=new();
     readonly Dictionary<Material,Vector4[]> parameters=new();
@@ -30,7 +32,7 @@ internal sealed class HissatsuActor
     internal HissatsuParticles Particles;
     readonly Dictionary<string,Texture2D> effectTextures=new(StringComparer.OrdinalIgnoreCase);
     internal readonly List<string> Warnings=new();
-    sealed class Skin { internal Mesh Mesh; internal Renderer Renderer; internal Vector3[] Vertices,Normals,Output,OutputNormals; internal G4ModelParser.Part Part; internal int[] Palette; internal int Rigid; }
+    sealed class Skin { internal Mesh Mesh; internal Renderer Renderer; internal Vector3[] Vertices,Normals,Output,OutputNormals; internal G4ModelParser.Part Part; internal int[] Palette; internal Vector4[] OutputTangents; internal int Rigid,Billboard; internal bool Drawable=true; }
     static readonly Matrix4x4 Mirror=Matrix4x4.Scale(new Vector3(1,1,-1));
     static G4Skeleton ReadRig(byte[] bytes,string path)
     {
@@ -44,10 +46,28 @@ internal sealed class HissatsuActor
     internal HissatsuActor(string name,G4Skeleton rig,Transform parent,bool cumulativeScale=false)
     {
         Root=new GameObject(name);Root.transform.SetParent(parent,false);Rig=rig;this.cumulativeScale=cumulativeScale;
-        int count=rig.Names.Length;Pose=new Matrix4x4[count];inverse=new Matrix4x4[count];rest=new Matrix4x4[count];local=new Matrix4x4[count];matrices=new Matrix4x4[count];skin=new Matrix4x4[count];done=new bool[count];
-        animated=new bool[count];animatedPosition=new Vector3[count];animatedScale=new Vector3[count];animatedRotation=new Quaternion[count];
+        int count=rig.Names.Length;billboardBones=new byte[count];
+        if(rig.Bytes!=null&&rig.Bytes.Length>=0x30&&(rig.Bytes[0x22]&2)!=0){
+            int flags=0x40+BitConverter.ToUInt16(rig.Bytes,0x2e)*4;
+            if(flags+count>rig.Bytes.Length)throw new InvalidDataException(rig.Path+": invalid billboard bone table");
+            for(int i=0;i<count;i++)billboardBones[i]=(byte)((rig.Bytes[flags+i]>>1)&15);
+        }
+        Pose=new Matrix4x4[count];inverse=new Matrix4x4[count];rest=new Matrix4x4[count];local=new Matrix4x4[count];matrices=new Matrix4x4[count];skin=new Matrix4x4[count];done=new bool[count];
+        restScale=new Vector3[count];animated=new bool[count];animatedPosition=new Vector3[count];animatedScale=new Vector3[count];animatedRotation=new Quaternion[count];
         for(int i=0;i<count;i++){rest[i]=Mirror*rig.Bind[i]*Mirror;inverse[i]=rest[i].inverse;Pose[i]=rest[i];}
-        for(int i=0;i<count;i++){int p=rig.Parents[i];local[i]=p<count&&p!=i?rest[p].inverse*rest[i]:rest[i];}
+        // Animation rest locals are a separate G4SK table. The mesh binding
+        // matrices can describe a different pose, including a different root
+        // orientation/translation; deriving locals from them moves balls and
+        // applies a second scene placement to skinned effect meshes.
+        var data=new G4ModelParser.Binary(rig.Bytes,rig.Path);
+        int locals=0x40+data.U16(0x26)*4;data.Range(locals,count*48L);
+        for(int i=0;i<count;i++){
+            int at=locals+i*48;
+            var scale=new Vector3(data.F32(at),data.F32(at+4),data.F32(at+8));
+            var rotation=new Quaternion(data.F32(at+16),data.F32(at+20),data.F32(at+24),data.F32(at+28)).normalized;
+            var position=new Vector3(data.F32(at+32),data.F32(at+36),data.F32(at+40));
+            restScale[i]=scale;local[i]=Mirror*Matrix4x4.TRS(position,rotation,scale)*Mirror;
+        }
     }
     internal void LoadModel(string relative,string textureRelative=null)
     {
@@ -60,6 +80,8 @@ internal sealed class HissatsuActor
     {
         string relative=full.Substring(DumpDataManager.CommonPath.TrimEnd('\\','/').Length+1);
         var parsed=G4ModelParser.Parse(metadata,geometry,full);
+        var meshMetadata=new G4ModelParser.Binary(metadata,full);
+        int materialTable=meshMetadata.U16(10)*4+meshMetadata.U16(0x64)*4;
         foreach(var part in parsed.Parts)
             if(part.BonePalette!=null&&part.BonePalette.Any(h=>!Rig.ByHash.ContainsKey(h)))
                 throw new InvalidDataException(full+": mesh references bones absent from the animation rig");
@@ -75,7 +97,7 @@ internal sealed class HissatsuActor
                 mesh.uv2=part.ExtraUV?[0]??part.UV;mesh.uv4=part.ExtraUV?[2]??part.UV;
                 var palette=part.BonePalette?.Select(h=>Rig.ByHash.TryGetValue(h,out int at)?at:-1).ToArray();
                 if(palette!=null&&palette.Any(i=>i<0))throw new InvalidDataException(full+": mesh references bones absent from the animation rig");
-                skins.Add(new Skin{Mesh=mesh,Renderer=filter.GetComponent<Renderer>(),Part=part,Vertices=mesh.vertices,Normals=mesh.normals,Output=new Vector3[mesh.vertexCount],OutputNormals=new Vector3[mesh.vertexCount],Palette=palette,Rigid=Rig.ByHash.TryGetValue(part.NodeHash,out int bone)?bone:-1});
+                skins.Add(new Skin{Mesh=mesh,Renderer=filter.GetComponent<Renderer>(),Part=part,Vertices=mesh.vertices,Normals=mesh.normals,Output=new Vector3[mesh.vertexCount],OutputNormals=new Vector3[mesh.vertexCount],Palette=palette,OutputTangents=part.Tangents==null?null:new Vector4[mesh.vertexCount],Billboard=meshMetadata.U8(materialTable+part.Material*16+13),Rigid=Rig.ByHash.TryGetValue(part.NodeHash,out int bone)?bone:-1});
             });
         obj.transform.SetParent(Root.transform,false);
         foreach(var renderer in obj.GetComponentsInChildren<Renderer>()){
@@ -97,6 +119,9 @@ internal sealed class HissatsuActor
         foreach(var material in obj.GetComponentsInChildren<Renderer>().Select(r=>r.sharedMaterial).Distinct()){
             material.shader=Resources.Load<Shader>("G4EventCharacter");
             int index=model.Materials.FindIndex(m=>m.Name==material.name);if(index<0)continue;
+            int colorRecord=Section(0x66)+b.U16(Section(0x64)+index*16)*48;
+            ambientColors[material]=new Vector4(b.F32(colorRecord+16),b.F32(colorRecord+20),b.F32(colorRecord+24),b.F32(colorRecord+28));
+            material.SetFloat("_Gain",1+ambientColors[material].x);
             // Some native character props split a glass shell into an opaque
             // surface record and an additive reflection record on the same
             // geometry. The shell has no diffuse vertex contribution. Drawing
@@ -133,6 +158,11 @@ internal sealed class HissatsuActor
             uint hash=b.U32(Section(0x7a)+start*4);if(!uvTargets.TryGetValue(hash,out var targets))uvTargets[hash]=targets=new List<(Material,int)>();targets.Add((material,0));
         }
     }
+    internal void IncomingBallAppearance()
+    {
+        foreach(var material in materials)
+            if(material.HasProperty("_BallAuraColumn"))material.SetFloat("_BallAuraColumn",4);
+    }
     void ConfigureEffects(byte[] bytes,G4ModelParser.Model model,GameObject obj,byte[] container)
     {
         var b=new G4ModelParser.Binary(bytes,"Event material");int bias=b.U16(10)*4;int Section(int field)=>bias+b.U16(field)*4;
@@ -142,6 +172,10 @@ internal sealed class HissatsuActor
         Texture2D Texture(uint hash){
             if(loaded.TryGetValue(hash,out var cached))return cached;
             var data=textureData.SingleOrDefault(t=>t.Hash==hash);
+            if(data==null){
+                string common=Path.Combine(DumpDataManager.Dx11Path,"effect","battle","common","effCmnTex","effCmnTex.g4tx");
+                if(File.Exists(common))data=G4TextureParser.Parse(File.ReadAllBytes(common),common,new List<string>(),baseOnly:false).FirstOrDefault(t=>t.Hash==hash);
+            }
             if(data==null){
                 string shared=Path.Combine(DumpDataManager.Dx11Path,"effect","system");
                 foreach(string file in System.IO.Directory.Exists(shared)?System.IO.Directory.GetFiles(shared,"*.g4tx",SearchOption.AllDirectories):Array.Empty<string>()){
@@ -153,23 +187,54 @@ internal sealed class HissatsuActor
             var texture=resources.Own(new Texture2D(data.Width,data.Height,data.Format,data.MipCount,true){name=data.Name,wrapMode=TextureWrapMode.Repeat});
             texture.LoadRawTextureData(data.Pixels);texture.Apply(false,true);loaded.Add(hash,texture);effectTextures[data.Name]=texture;return texture;
         }
+        // Native rendering uses staged layer ranges, not a numeric descending
+        // priority: 25-29, then 37-38, then 30-36, then 40-49. Preserve mesh
+        // directory order inside a layer, including appended background meshes.
+        var drawOrder=model.Parts.OrderBy(part=>NativeDrawKey(b.U8(Section(0x64)+part.Material*16+8)))
+            .ThenBy(part=>part.SourceMeshIndex).Select((part,rank)=>(part.SourceMeshIndex,rank))
+            .ToDictionary(item=>item.SourceMeshIndex,item=>item.rank);
         foreach(var material in obj.GetComponentsInChildren<Renderer>().Select(r=>r.sharedMaterial).Distinct()){
             int index=model.Materials.FindIndex(m=>m.Name==material.name);if(index<0)continue;
             int record=Section(0x64)+index*16,color=Section(0x66)+b.U16(record)*48;
             material.shader=shader;material.color=new Color(b.F32(color),b.F32(color+4),b.F32(color+8),b.F32(color+12));
-            colors[material]=material.color;material.SetFloat("_Gain",1+b.F32(color+16));
+            colors[material]=material.color;
+            if(NativeDrawKey(b.U8(record+8))<0){
+                foreach(var item in skins.Where(item=>item.Renderer.sharedMaterial==material)){item.Drawable=false;item.Renderer.enabled=false;}
+                continue;
+            }
+            ambientColors[material]=new Vector4(b.F32(color+16),b.F32(color+20),b.F32(color+24),b.F32(color+28));
+            material.SetFloat("_Gain",1+b.F32(color+16));
             var states=new Dictionary<byte,byte>();for(int i=0;i<b.U8(record+11);i++){int at=Section(0x6c)+(b.U16(record+4)+i)*2;states[b.U8(at)]=b.U8(at+1);}
             bool blend=states.TryGetValue(6,out byte enabled)&&enabled!=0;
             material.SetFloat("_SrcBlend",blend?NativeBlend(states.TryGetValue(9,out byte src)?src:(byte)4):1);
             material.SetFloat("_DstBlend",blend?NativeBlend(states.TryGetValue(10,out byte dest)?dest:(byte)5):0);
             material.SetFloat("_ZWrite",states.TryGetValue(5,out byte write)?write:0);
+            material.SetFloat("_Cull",states.TryGetValue(14,out byte cull)&&cull==1?2:0);
+            material.SetFloat("_BlendOp",states.TryGetValue(7,out byte operation)&&operation==5?(int)UnityEngine.Rendering.BlendOp.ReverseSubtract:(int)UnityEngine.Rendering.BlendOp.Add);
             material.SetFloat("_ZTest",states.TryGetValue(4,out byte test)&&test==0?(int)UnityEngine.Rendering.CompareFunction.Always:(int)UnityEngine.Rendering.CompareFunction.LessEqual);
+            // A translucent material may intentionally write depth. Keep its
+            // transparent ordering: moving it ahead of the background makes the
+            // invisible part of feather/sprite quads punch rectangular holes.
             material.renderQueue=blend?3000:2000;
+            // Respect material layers, retaining source mesh order within each
+            // layer instead of sorting large translucent spheres by bounds.
+            foreach(var item in skins.Where(item=>item.Renderer.sharedMaterial==material))
+                item.Renderer.sortingOrder=blend?drawOrder[item.Part.SourceMeshIndex]:0;
             uint shaderHash=b.U32(Section(0x78)+b.U8(record+9)*4);
-            if(shaderHash==0xd05b3d9d)material.shader=Resources.Load<Shader>("G4EventDistortion")??throw new InvalidDataException("Missing G4EventDistortion shader");
+            if(shaderHash==0){
+                // An unbound placeholder has no native draw program. Rendering
+                // it with the generic preview shader exposes its vertex colors
+                // as an opaque surface (e.g. the red sphere in whs02340).
+                foreach(var item in skins.Where(item=>item.Renderer.sharedMaterial==material)){item.Drawable=false;item.Renderer.enabled=false;}
+                continue;
+            }
+            bool distortion=shaderHash==0xd05b3d9d||shaderHash==0xd1b3c917;
+            if(distortion)material.shader=Resources.Load<Shader>("G4EventDistortion")??throw new InvalidDataException("Missing G4EventDistortion shader");
             bool solidToon=shaderHash==0x81550fea;
             material.SetFloat("_SolidToon",solidToon?1:0);
-            material.SetFloat("_Family",solidToon?1:shaderHash==0x2c30c634?2:shaderHash==0x5f8ef7cf?3:shaderHash==0xd05b3d9d?4:shaderHash==G4TextureParser.Crc32("Effect_T3Threshold")||shaderHash==G4TextureParser.Crc32("Effect_T3ThresholdF")?5:0);
+            material.SetFloat("_VDisp",shaderHash==0xee97bf86?1:0);
+            material.SetFloat("_Family",shaderHash==G4TextureParser.Crc32("Effect_BallAura1")?9:shaderHash==G4TextureParser.Crc32("Effect_DifferenceFlowM")?8:shaderHash==G4TextureParser.Crc32("Effect_DifferenceFlow")?7:solidToon?1:shaderHash==0x2c30c634?2:shaderHash==0x5f8ef7cf||shaderHash==0xee97bf86?3:distortion?4:shaderHash==G4TextureParser.Crc32("Effect_Smoke2")?6:shaderHash==G4TextureParser.Crc32("Effect_T3Threshold")||shaderHash==G4TextureParser.Crc32("Effect_T3ThresholdF")?5:0);
+            material.SetFloat("_DistortionBlur",shaderHash==0xd05b3d9d?1:0);
             material.SetFloat("_Flow",shaderHash==G4TextureParser.Crc32("Effect_T3ThresholdF")?1:0);
             material.SetFloat("_Threshold",shaderHash==0x60f87c7d||shaderHash==0xc10dec69?1:0);
             material.SetFloat("_Pattern",shaderHash==0x93094f5e?1:0);
@@ -186,7 +251,7 @@ internal sealed class HissatsuActor
                 int reference=Section(0x68)+(b.U16(record+6)+t)*6;
                 // Distortion's third reference is the native scene color target,
                 // supplied by G4EventDistortion's GrabPass rather than a DDS.
-                if(shaderHash==0xd05b3d9d&&t>=2)continue;
+                if(distortion&&t>=2)continue;
                 var texture=Texture(b.U32(Section(0x76)+b.U8(reference)*4));
                 int sampler=Section(0x6e)+b.U16(reference+4)*2;
                 for(int i=0;i<3;i++){
@@ -202,8 +267,12 @@ internal sealed class HissatsuActor
             material.SetFloat("_UseMask",shaderHash==0xd1702270||shaderHash==0x42724112?1:0);
             for(int t=0;t<Math.Min(6,textures);t++){
                 int uv=Section(0x88)+(start+t)*32;
-                float a=b.F32(uv),bb=b.F32(uv+4),c=b.F32(uv+8),d=b.F32(uv+16),e=b.F32(uv+20),f=b.F32(uv+24);
-                rows[t*2]=new Vector4(a,bb,c,0);rows[t*2+1]=new Vector4(d,e,f,0);
+                b.Range(uv,32);
+                var coefficients=new[]{0,4,8,16,20,24}.Select(offset=>BitConverter.ToSingle(bytes,uv+offset)).ToArray();
+                if(coefficients.All(value=>!float.IsNaN(value)&&!float.IsInfinity(value))){
+                    rows[t*2]=new Vector4(coefficients[0],coefficients[1],coefficients[2],0);
+                    rows[t*2+1]=new Vector4(coefficients[3],coefficients[4],coefficients[5],0);
+                }else Warnings.Add(material.name+" sampler "+t+": non-finite rest UV; using neutral rest UV with native animation overrides.");
                 uint hash=b.U32(Section(0x7a)+(start+t)*4);
                 if(!uvTargets.TryGetValue(hash,out var targets))uvTargets[hash]=targets=new List<(Material,int)>();targets.Add((material,t));
             }
@@ -235,72 +304,186 @@ internal sealed class HissatsuActor
             }
             animated[bone]=true;animatedPosition[bone]=p;animatedRotation[bone]=q;animatedScale[bone]=s;
         }
-        // Character tracks carry cumulative scale; effect rigs retain local
-        // scale so a scale helper can enlarge its animated child mesh.
-        for(int i=0;i<local.Length;i++)if(animated[i]){
-            var scale=animatedScale[i];int parent=Rig.Parents[i];
-            if(cumulativeScale&&parent<local.Length&&parent!=i&&animated[parent])
-                for(int axis=0;axis<3;axis++)if(Mathf.Abs(animatedScale[parent][axis])>1e-9f)scale[axis]/=animatedScale[parent][axis];
-            matrices[i]=Matrix4x4.TRS(animatedPosition[i],animatedRotation[i],scale);
-        }
+        // Native NonUniformScale cancels the parent's scale in the child's
+        // basis, while retaining the full parent transform for its position.
+        for(int i=0;i<local.Length;i++)if(animated[i])
+            matrices[i]=Matrix4x4.TRS(animatedPosition[i],animatedRotation[i],animatedScale[i]);
         Array.Clear(done,0,done.Length);
-        void Build(int i){if(done[i])return;int parent=Rig.Parents[i];if(parent<local.Length&&parent!=i){Build(parent);Pose[i]=Pose[parent]*matrices[i];}else Pose[i]=matrices[i];done[i]=true;}
+        void Build(int i){if(done[i])return;int parent=Rig.Parents[i];if(parent<local.Length&&parent!=i){Build(parent);Pose[i]=Compose(parent,i);}else Pose[i]=matrices[i];done[i]=true;}
         for(int i=0;i<local.Length;i++)Build(i);
+        UpdateMeshes(null);
+    }
+    Matrix4x4 Compose(int parent,int child)
+    {
+        var full=Pose[parent];if(!cumulativeScale)return full*matrices[child];
+        var scale=animated[parent]?animatedScale[parent]:restScale[parent];
+        var basis=full;
+        for(int axis=0;axis<3;axis++)for(int row=0;row<3;row++)
+            basis[row,axis]=Mathf.Abs(scale[axis])>1e-9f?full[row,axis]/scale[axis]:0;
+        var result=basis*matrices[child];var position=full.MultiplyPoint3x4(matrices[child].GetColumn(3));
+        result.SetColumn(3,new Vector4(position.x,position.y,position.z,1));return result;
+    }
+    readonly Dictionary<Material,(float src,float dst,float depth,int queue)> fadeStates=new();
+    internal void Opacity(float opacity)
+    {
+        foreach(var material in materials){
+            if(!fadeStates.TryGetValue(material,out var state)){
+                state=(material.GetFloat("_SrcBlend"),material.GetFloat("_DstBlend"),material.GetFloat("_ZWrite"),material.renderQueue);fadeStates.Add(material,state);
+            }
+            if(material.HasProperty("_ModelOpacity"))material.SetFloat("_ModelOpacity",opacity);
+            else {var color=material.color;color.a*=opacity;material.color=color;}
+            bool fading=opacity<.999f;bool opaque=state.src==1&&state.dst==0;
+            material.SetFloat("_SrcBlend",fading&&opaque?(int)UnityEngine.Rendering.BlendMode.SrcAlpha:state.src);
+            material.SetFloat("_DstBlend",fading&&opaque?(int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha:state.dst);
+            material.SetFloat("_ZWrite",fading?0:state.depth);material.renderQueue=fading?3000:state.queue;
+        }
+    }
+    // Native material +0x0D and G4SK bone flags opt into camera-facing
+    // placement. Rebuild from this frame's animation every time (no accumulation).
+    internal void ApplyBillboards(Camera camera)
+    {
+        if(!billboardBones.Any(mode=>mode!=0)&&!skins.Any(item=>item.Billboard!=0))return;
+        var cameraLocal=Root.transform.worldToLocalMatrix*camera.transform.localToWorldMatrix;
+        Array.Clear(done,0,done.Length);
+        void Build(int i){
+            if(done[i])return;int parent=Rig.Parents[i];
+            if(parent<local.Length&&parent!=i){Build(parent);Pose[i]=Compose(parent,i);}else Pose[i]=matrices[i];
+            if(billboardBones[i]!=0)Pose[i]=Billboard(Pose[i],billboardBones[i],cameraLocal);
+            done[i]=true;
+        }
+        for(int i=0;i<Pose.Length;i++)Build(i);
+        UpdateMeshes(cameraLocal);
+    }
+    static Matrix4x4 Billboard(Matrix4x4 placement,int mode,Matrix4x4 camera)
+    {
+        if(mode<1||mode>3)return placement;
+        // Perform basis construction in the original right-handed coordinates.
+        var m=Mirror*placement*Mirror;var c=Mirror*camera*Mirror;
+        Vector3 position=m.GetColumn(3),direction=(Vector3)c.GetColumn(3)-position;
+        if(direction.sqrMagnitude<1e-12f)return placement;
+        Vector3 x,y,z;
+        if(mode==3){x=-(Vector3)c.GetColumn(0);y=c.GetColumn(1);z=-(Vector3)c.GetColumn(2);}
+        else if(mode==2){y=((Vector3)m.GetColumn(1)).normalized;x=Vector3.Cross(y,direction);z=Vector3.Cross(x.normalized,y);}
+        else {z=direction.normalized;x=Vector3.Cross(((Vector3)c.GetColumn(1)).normalized,z);y=Vector3.Cross(z,x.normalized);}
+        if(x.sqrMagnitude<1e-12f||y.sqrMagnitude<1e-12f||z.sqrMagnitude<1e-12f)return placement;
+        void SetAxis(int axis,Vector3 direction){Vector3 v=direction.normalized*((Vector3)m.GetColumn(axis)).magnitude;m.SetColumn(axis,new Vector4(v.x,v.y,v.z,0));}
+        SetAxis(0,x);SetAxis(1,y);SetAxis(2,z);
+        return Mirror*m*Mirror;
+    }
+    void UpdateMeshes(Matrix4x4? camera)
+    {
         for(int i=0;i<Pose.Length;i++)skin[i]=Pose[i]*inverse[i];
         foreach(var item in skins){
+            var rigid=item.Rigid>=0?skin[item.Rigid]:Matrix4x4.identity;
+            if(camera.HasValue&&item.Billboard!=0&&item.Palette==null){
+                var placed=item.Rigid>=0?Pose[item.Rigid]:Matrix4x4.identity;
+                rigid=Billboard(placed,item.Billboard,camera.Value)*(item.Rigid>=0?inverse[item.Rigid]:Matrix4x4.identity);
+            }
             for(int v=0;v<item.Vertices.Length;v++){
-                Vector3 p=Vector3.zero,n=Vector3.zero;float sum=0;
+                Vector3 p=Vector3.zero,n=Vector3.zero;float sum=0;Vector3 tangent=Vector3.zero;
                 if(item.Palette!=null)for(int w=0;w<8;w++){
                     float weight=item.Part.BoneWeights[v,w]/65535f;if(weight==0)continue;int bone=item.Palette[item.Part.BoneIndices[v,w]];
-                    p+=skin[bone].MultiplyPoint3x4(item.Vertices[v])*weight;n+=skin[bone].MultiplyVector(item.Normals[v])*weight;sum+=weight;
+                    p+=skin[bone].MultiplyPoint3x4(item.Vertices[v])*weight;n+=skin[bone].MultiplyVector(item.Normals[v])*weight;if(item.Part.Tangents!=null)tangent+=skin[bone].MultiplyVector(item.Part.Tangents[v])*weight;sum+=weight;
                 }
-                if(sum==0){var transform=item.Rigid>=0?skin[item.Rigid]:Matrix4x4.identity;p=transform.MultiplyPoint3x4(item.Vertices[v]);n=transform.MultiplyVector(item.Normals[v]);}
+                if(sum==0){p=rigid.MultiplyPoint3x4(item.Vertices[v]);n=rigid.MultiplyVector(item.Normals[v]);if(item.Part.Tangents!=null)tangent=rigid.MultiplyVector(item.Part.Tangents[v]);}
                 item.Output[v]=p;item.OutputNormals[v]=n.normalized;
+                if(item.OutputTangents!=null){tangent.Normalize();item.OutputTangents[v]=new Vector4(tangent.x,tangent.y,tangent.z,-1);}
             }
+            if(item.OutputTangents!=null)item.Mesh.tangents=item.OutputTangents;
             item.Mesh.vertices=item.Output;item.Mesh.normals=item.OutputNormals;item.Mesh.RecalculateBounds();
         }
     }
     internal Matrix4x4 Bone(string name)=>Rig.ByHash.TryGetValue(G4TextureParser.Crc32(name),out int i)?Pose[i]:Matrix4x4.identity;
     internal void VisibilityFrame(string cut,float seconds)
     {
-        foreach(var item in skins)item.Renderer.enabled=true;
+        foreach(var item in skins)item.Renderer.enabled=item.Drawable;
         foreach(var bank in VisibilityBanks){var clip=bank.Find(cut);if(clip==null)continue;float frame=clip.Start+seconds*clip.Fps;
             foreach(var track in clip.Tracks)foreach(var curve in track.Curves){if(curve.Type!=15)continue;bool visible=curve.Sample(frame).x!=0;
-                foreach(var item in skins)if(item.Part.NodeHash==track.Target||G4TextureParser.Crc32(item.Part.Name)==track.Target)item.Renderer.enabled=visible;
+                foreach(var item in skins)if(item.Part.NodeHash==track.Target||G4TextureParser.Crc32(item.Part.Name)==track.Target)item.Renderer.enabled=visible&&item.Drawable;
             }
         }
+        // Native effect material opacity also controls submission, even when
+        // blending is disabled. Otherwise a zero-alpha helper with One/Zero
+        // blending draws its RGB and writes depth (ev60_00240's dummy backdrop).
+        // Evaluate after the material tracks and combine with G4VS visibility;
+        // recomputing every frame also restores the mesh after reverse seeks.
+        foreach(var item in skins){
+            var material=item.Renderer.sharedMaterial;
+            if(material.HasProperty("_Family")&&material.color.a<.005f)item.Renderer.enabled=false;
+        }
+    }
+    internal static int NativeDrawKey(int layer)
+    {
+        layer=Mathf.Clamp(layer,0,63);
+        if(layer>=50&&layer<55)return -1; // outside all native draw ranges
+        int stage=layer<2?0:layer<10?1:layer==21||layer==39?2:layer<20?3:
+            layer<25?4:layer<30?10:layer==37||layer==38?11:layer<37?12:
+            layer<50?13:layer<60?20:21;
+        return stage*64+layer;
     }
     static int NativeBlend(byte value)=>value switch{0=>0,1=>1,2=>3,3=>6,4=>5,5=>10,6=>7,7=>8,8=>2,9=>4,10=>9,_=>throw new InvalidDataException("Unsupported native effect blend factor "+value)};
     static string UvPrefix(Material material,int slot)=>material.HasProperty("_EventUvRow0")?"_EventUv":slot==0?"_Uv":slot==1?"_Mask":slot==2?"_Extra":"_Tex"+slot;
+    internal void BallStatus(Vector4 color,Vector4 rim,float power)
+    {
+        foreach(var material in materials)if(material.HasProperty("_StatusColor")){
+            material.SetVector("_StatusColor",color);material.SetVector("_StatusRim",rim);material.SetFloat("_StatusPower",power);
+        }
+    }
     internal void MaterialFrame(string cut,float seconds)
     {
         foreach(var material in materials){material.mainTextureOffset=uvOffsets[material];material.color=colors[material];}
         foreach(var entry in uvRows)for(int slot=0;slot<entry.Value.Length/2;slot++){string prefix=UvPrefix(entry.Key,slot);entry.Key.SetVector(prefix+"Row0",entry.Value[slot*2]);entry.Key.SetVector(prefix+"Row1",entry.Value[slot*2+1]);}
+        foreach(var entry in ambientColors)entry.Key.SetFloat("_Gain",1+entry.Value.x);
         foreach(var entry in parameters)for(int i=0;i<entry.Value.Length;i++)entry.Key.SetVector("_Param"+i,entry.Value[i]);
         foreach(var bank in MaterialBanks){var clip=bank.Find(cut);if(clip==null&&bank.Clips.Any(c=>System.Text.RegularExpressions.Regex.IsMatch(c.Name,@"^c\d+$")))continue;clip??=bank.Clips.FirstOrDefault();if(clip==null)continue;
             float frame=clip.Start+seconds*clip.Fps;
             foreach(var track in clip.Tracks){
-                if(uvTargets.TryGetValue(track.Target,out var targets))foreach(var target in targets)foreach(var curve in track.Curves){
-                    if(curve.Type!=10&&curve.Type!=11)continue;
-                    float value=curve.Sample(frame).x;string prefix=UvPrefix(target.material,target.slot),u=prefix+"Row0",v=prefix+"Row1";
+                if(uvTargets.TryGetValue(track.Target,out var targets))foreach(var target in targets){
+                    string prefix=UvPrefix(target.material,target.slot),u=prefix+"Row0",v=prefix+"Row1";
                     var rowU=target.material.GetVector(u);var rowV=target.material.GetVector(v);
-                    // G4TP keys are offsets before the authored UV rotation/scale.
-                    // Recover the other offset so independently keyed axes compose.
-                    float determinant=rowU.x*rowV.y-rowU.y*rowV.x;if(Mathf.Abs(determinant)<1e-10f)continue;
-                    float c=rowU.z,f=rowV.z;
-                    float tx=(-rowV.y*c+rowU.y*f)/determinant,ty=(rowV.x*c-rowU.x*f)/determinant;
-                    if(curve.Type==10)tx=value;else ty=value;
-                    rowU.z=-rowU.x*tx-rowU.y*ty;rowV.z=-rowV.x*tx-rowV.y*ty;
+                    AnimateUv(ref rowU,ref rowV,track,frame);
                     target.material.SetVector(u,rowU);target.material.SetVector(v,rowV);
                 }
                 foreach(var material in materials.Where(m=>G4TextureParser.Crc32(m.name)==track.Target)){
                 foreach(var c in track.Curves){var v=c.Sample(frame);var color=material.color;
-                    if(c.Type>=16&&c.Type<=19){color[c.Type-16]=v.x;material.color=color;}
+                    // G4MA's parameter selects the color register: 0 is diffuse,
+                    // 1 is ambient. Treating ambient as diffuse tints rocks cyan
+                    // and overwrites opacity with unrelated lighting controls.
+                    if(c.Type>=16&&c.Type<=19&&c.Parameter==0){color[c.Type-16]=v.x;material.color=color;}
+                    else if(c.Type==16&&c.Parameter==1&&ambientColors.ContainsKey(material))material.SetFloat("_Gain",1+v.x);
                     else if(c.Type>=32&&c.Type<=35&&c.Parameter<8){string name="_Param"+c.Parameter;if(material.HasProperty(name)){var parameter=material.GetVector(name);parameter[c.Type-32]=v.x;material.SetVector(name,parameter);}}
                 }
                 }
             }
         }
+    }
+    static void AnimateUv(ref Vector4 rowU,ref Vector4 rowV,G4AnimationBank.Track track,float frame)
+    {
+        // G4TP animates authoring-space S*R(-angle)*(uv-offset). Native DDS
+        // coordinates invert V, so the shader matrix is F*authoring*F, where
+        // F(u,v)=(u,1-v). In particular V offset has the opposite sign from U.
+        float a=rowU.x,b=-rowU.y,c=-rowV.x,d=rowV.y;
+        float tx=rowU.y+rowU.z,ty=1-rowV.y-rowV.z;
+        float determinant=a*d-b*c;
+        if(Mathf.Abs(determinant)<1e-10f)return;
+        float offsetU=(-d*tx+b*ty)/determinant,offsetV=(c*tx-a*ty)/determinant;
+        float scaleU=Mathf.Sqrt(a*a+b*b),scaleV=determinant/scaleU;
+        float angle=Mathf.Atan2(b,a);bool changed=false;
+        foreach(var curve in track.Curves){
+            float value=curve.Sample(frame).x;
+            switch(curve.Type){
+                case 1:if(Mathf.Abs(value)>1e-10f){scaleU=1/value;changed=true;}break;
+                case 2:if(Mathf.Abs(value)>1e-10f){scaleV=1/value;changed=true;}break;
+                case 8:angle=value;changed=true;break;
+                case 10:offsetU=value;changed=true;break;
+                case 11:offsetV=value;changed=true;break;
+            }
+        }
+        if(!changed)return;
+        float cosine=Mathf.Cos(angle),sine=Mathf.Sin(angle);
+        a=scaleU*cosine;b=scaleU*sine;c=-scaleV*sine;d=scaleV*cosine;
+        rowU=new Vector4(a,-b,b-a*offsetU-b*offsetV,rowU.w);
+        rowV=new Vector4(-c,d,1-d+c*offsetU+d*offsetV,rowV.w);
     }
     internal static HissatsuActor Demo(string name,Transform parent)
     {
@@ -340,6 +523,11 @@ internal sealed class HissatsuActor
         path=HissatsuEvent.Resolve(path);
         if(path.EndsWith(".objbin",StringComparison.OrdinalIgnoreCase)){
             string packed=Path.ChangeExtension(path,".g4pkm");if(File.Exists(packed))path=packed;
+        }
+        string setup=Path.ChangeExtension(path,".objbin");
+        if(File.Exists(setup)){
+            var flag=CfgTable.Read(File.ReadAllBytes(setup),setup).Rows.FirstOrDefault(row=>row.Values.Length>=2&&row.Text(0)=="NonUniformScale");
+            cumulativeScale=flag!=null&&flag.Int(1)!=0;
         }
         byte[] metadata=null,geometry=null;Dictionary<string,byte[]> blocks;
         if(path.EndsWith(".g4sk",StringComparison.OrdinalIgnoreCase)){blocks=new Dictionary<string,byte[]>{{"G4SK",File.ReadAllBytes(path)}};}

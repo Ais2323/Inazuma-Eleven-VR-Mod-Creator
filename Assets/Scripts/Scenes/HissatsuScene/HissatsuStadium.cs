@@ -52,7 +52,9 @@ internal sealed class HissatsuStadium : IDisposable
                 if(renderer.name.StartsWith("__")||renderer.name.IndexOf("culling",StringComparison.OrdinalIgnoreCase)>=0||new[]{"keizen","nagumo","hokuyo","raimon","teikoku"}.Any(n=>renderer.name.IndexOf(n,StringComparison.OrdinalIgnoreCase)>=0)){renderer.enabled=false;continue;}
                 var material=renderer.sharedMaterial;int at=parsed.Materials.FindIndex(m=>m.Name==material.name);if(at<0)continue;
                 // Reflection probe proxy volumes are not visible stadium meshes.
-                if(material.name.IndexOf("_cb_",StringComparison.OrdinalIgnoreCase)>=0){renderer.enabled=false;continue;}
+                if(material.name.IndexOf("_cb_",StringComparison.OrdinalIgnoreCase)>=0||
+                    material.name.IndexOf("_sdw_",StringComparison.OrdinalIgnoreCase)>=0||
+                    material.name.IndexOf("_shadow",StringComparison.OrdinalIgnoreCase)>=0){renderer.enabled=false;continue;}
                 int record=Section(0x64)+at*16;
                 material.shader=Resources.Load<Shader>("G4StadiumPreview")??throw new InvalidDataException("Missing stadium shader");
                 if(parsed.Materials[at].TextureHashes.Count>0)material.mainTexture=Texture(parsed.Materials[at].TextureHashes[0]);
@@ -72,6 +74,34 @@ internal sealed class HissatsuStadium : IDisposable
                 }
             }
             Loading.UpdateProgress((i+1)*100/models.Length);yield return null;
+        }
+        RemoveOverlappingSurfaces();
+    }
+    void RemoveOverlappingSurfaces()
+    {
+        // The complete stadium group already contains some of the separate
+        // roof's geometry. Only deduplicate across groups using the same atlas;
+        // keep opposite-facing surfaces and same-group grass/decal layers.
+        var owners=new Dictionary<(int texture,Vector3Int a,Vector3Int b,Vector3Int c),Transform>();
+        Vector3Int Vertex(Vector3 v)=>new Vector3Int(Mathf.RoundToInt(v.x*1000),Mathf.RoundToInt(v.y*1000),Mathf.RoundToInt(v.z*1000));
+        int Compare(Vector3Int a,Vector3Int b){int c=a.x.CompareTo(b.x);if(c==0)c=a.y.CompareTo(b.y);return c==0?a.z.CompareTo(b.z):c;}
+        foreach(var filter in Root.GetComponentsInChildren<MeshFilter>()){
+            var renderer=filter.GetComponent<Renderer>();if(renderer==null||!renderer.enabled)continue;
+            var mesh=filter.sharedMesh;var vertices=mesh.vertices;var triangles=mesh.triangles;var kept=new List<int>(triangles.Length);
+            int texture=renderer.sharedMaterial.mainTexture?.GetInstanceID()??0;
+            for(int i=0;i<triangles.Length;i+=3){
+                var a=Vertex(filter.transform.TransformPoint(vertices[triangles[i]]));
+                var b=Vertex(filter.transform.TransformPoint(vertices[triangles[i+1]]));
+                var c=Vertex(filter.transform.TransformPoint(vertices[triangles[i+2]]));
+                if(Compare(b,a)<0&&Compare(b,c)<=0)(a,b,c)=(b,c,a);
+                else if(Compare(c,a)<0&&Compare(c,b)<0)(a,b,c)=(c,a,b);
+                var key=(texture,a,b,c);
+                if(owners.TryGetValue(key,out var owner)&&owner!=filter.transform.parent)continue;
+                owners.TryAdd(key,filter.transform.parent);
+                kept.Add(triangles[i]);kept.Add(triangles[i+1]);kept.Add(triangles[i+2]);
+            }
+            if(kept.Count==triangles.Length)continue;
+            mesh.SetTriangles(kept,0);mesh.RecalculateBounds();if(kept.Count==0)renderer.enabled=false;
         }
     }
     public void Dispose(){if(Root!=null){Root.SetActive(false);CharacterManager.DestroyRuntimeObject(Root);Root=null;}}

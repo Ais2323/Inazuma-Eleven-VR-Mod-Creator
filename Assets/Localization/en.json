@@ -240,6 +240,9 @@
         "ModNamePlaceholder": "Enter mod name"
     },
     "HissatsuScene": {
+        "HissatsuNormalAnimation": "Normal animation",
+        "HissatsuShotBlockAnimation": "Block shot",
+        "HissatsuFailedCatchAnimation": "Failed catch",
         "HissatsuPlay": "Play",
         "HissatsuPause": "Pause",
         "HissatsuStadiumLoading": "Loading stadium...",

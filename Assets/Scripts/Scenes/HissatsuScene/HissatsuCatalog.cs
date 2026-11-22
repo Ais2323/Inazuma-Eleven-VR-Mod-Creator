@@ -7,7 +7,7 @@ using G4Runtime;
 
 internal sealed class HissatsuCatalog
 {
-    internal sealed class Entry { internal uint Id; internal int Category; internal string Resource,Event,Label,AssignedModel,AssignedPath; }
+    internal sealed class Entry { internal uint Id; internal int Category; internal string Resource,Event,AlternateEvent,Label,AssignedModel,AssignedPath; }
     internal readonly List<Entry> Entries=new();
     internal HissatsuCatalog()
     {
@@ -23,7 +23,12 @@ internal sealed class HissatsuCatalog
             string resource=db.String(row+list.Field("skillIDStr"));string ev=db.String(row+list.Field("eventIDName"));
             if(string.IsNullOrEmpty(ev))events.TryGetValue(db.U32(row+list.Field("eventID")),out ev);
             if(string.IsNullOrEmpty(ev))continue; // table placeholders have no preview event
-            Entries.Add(new Entry{Id=id,Category=category,Resource=resource,Event=ev,Label=names.TryGetValue(id,out string name)?name:resource});
+            string alternate=db.String(row+list.Field("failEventIDName"));
+            if(string.IsNullOrEmpty(alternate))events.TryGetValue(db.U32(row+list.Field("failEventID")),out alternate);
+            // The native secondary event is shot-blocking for defenders and
+            // the unsuccessful catch for keepers. Do not guess sibling names.
+            if(category!=2&&category!=3||alternate==ev||string.IsNullOrEmpty(alternate)||!events.ContainsValue(alternate))alternate=null;
+            Entries.Add(new Entry{Id=id,Category=category,Resource=resource,Event=ev,AlternateEvent=alternate,Label=names.TryGetValue(id,out string name)?name:resource});
         }
         // AURA_CMD_INFO[12] is the native summon event, distinct from the
         // normal skill events and from the keshin's armed transformation.

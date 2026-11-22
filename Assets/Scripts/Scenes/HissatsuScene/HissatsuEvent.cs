@@ -13,7 +13,7 @@ internal sealed class HissatsuEvent
     internal readonly List<Cut> Cuts=new();
     internal string Name,Directory,CameraPath;
     internal float Duration=>Cuts.Max(c=>c.End)/60f;
-    internal const uint Actor=896822880,Model=2040143546,Attach=2731669826,Motion=2847795607,Visible=2950922317;
+    internal const uint Actor=896822880,Model=2040143546,Attach=2731669826,Motion=2847795607,Visible=2950922317,SceneVisibility=0x3DB3FBEB;
     internal static HissatsuEvent Read(string name)
     {
         if(string.IsNullOrEmpty(name)||!System.Text.RegularExpressions.Regex.IsMatch(name,@"^ev\d+_\d+(?:_\d+)?$"))throw new InvalidDataException("Missing or invalid native skill event: "+name);
@@ -33,6 +33,11 @@ internal sealed class HissatsuEvent
         }
         ReadCommands(Path.Combine(DumpDataManager.CommonPath,"event_cfg","evt",name+".cfg.bin"),true);
         ReadCommands(Path.Combine(DumpDataManager.CommonPath,"event_cfg","eff",name+"_eff.cfg.bin"),false);
+        // evt and eff are separate chronological streams. Replaying their
+        // concatenation let an old eff command override a later evt state.
+        // Preserve source order for ties, including TYPE/attach command blocks.
+        var ordered=result.Commands.OrderBy(command=>command.Frame).ToArray();
+        result.Commands.Clear();result.Commands.AddRange(ordered);
         if(result.Cuts.Count==0)throw new InvalidDataException(name+": event has no cuts");
         result.Cuts.Sort((a,b)=>a.Start.CompareTo(b.Start));return result;
     }
@@ -45,6 +50,18 @@ internal sealed class HissatsuEvent
         string full=Path.GetFullPath(Path.Combine(root,path));
         if(!full.StartsWith(root,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Event resource outside dump: "+path);
         return full;
+    }
+    // This is a global timeline command, including transitions across cuts.
+    // Recompute from the visible default on every sample so reverse seeking
+    // and switching cached moves cannot retain another frame's scene state.
+    internal bool SceneVisibleAt(float seconds)
+    {
+        bool visible=true;int last=int.MinValue;float frame=seconds*60;
+        foreach(var command in Commands)
+            if(command.Code==SceneVisibility&&command.Args.Length>0&&command.Frame<=frame&&command.Frame>=last){
+                visible=command.Number(0)!=0;last=command.Frame;
+            }
+        return visible;
     }
     internal Cut At(float seconds)=>Cuts.LastOrDefault(c=>c.Start<=seconds*60)??Cuts[0];
 }

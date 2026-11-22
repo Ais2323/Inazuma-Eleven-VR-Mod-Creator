@@ -17,17 +17,21 @@ internal sealed class HissatsuPreview : IDisposable
     readonly Dictionary<string,HissatsuActor> actors=new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string,G4AnimationBank> motions=new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string,string> motionNames=new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string,string> motionPaths=new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string,string> motionTypes=new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> missing=new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string,Color> lightColors=new(StringComparer.OrdinalIgnoreCase);
     readonly Camera camera;
+    HissatsuBallStatus ballStatus;
+    readonly bool neutralIncomingBall;
     G4AnimationBank cameraBank;
     readonly string assignedModel,assignedPath;
     static string indexedRoot;
     static Dictionary<string,string[]> modelIndex;
     string Expand(string value)=>value?.Replace("<TYPE>","01").Replace("<NO>","01").Replace("<VARIATION>","00").Replace("<ASSIGN>",assignedModel??"<ASSIGN>");
-    internal HissatsuPreview(HissatsuEvent ev,Transform parent,Camera camera,string assignedModel=null,string assignedPath=null)
+    internal HissatsuPreview(HissatsuEvent ev,Transform parent,Camera camera,string assignedModel=null,string assignedPath=null,bool neutralIncomingBall=false)
     {
-        Event=ev;this.camera=camera;this.assignedModel=assignedModel;this.assignedPath=assignedPath;Root=new GameObject(ev.Name);Root.transform.SetParent(parent,false);Root.SetActive(false);
+        this.neutralIncomingBall=neutralIncomingBall;Event=ev;this.camera=camera;this.assignedModel=assignedModel;this.assignedPath=assignedPath;Root=new GameObject(ev.Name);Root.transform.SetParent(parent,false);Root.SetActive(false);
     }
     internal IEnumerator Load(Func<bool> cancelled)
     {
@@ -77,25 +81,55 @@ internal sealed class HissatsuPreview : IDisposable
             foreach(var actor in actors){
                 if(cancelled())yield break;
                 if(actor.Key.IndexOfAny(Path.GetInvalidFileNameChars())>=0){if(missing.Add(actor.Key))Warnings.Add(Event.Name+": unresolved actor template "+actor.Key);continue;}
-                string path=Path.Combine(Event.Directory,Event.Name+"_"+actor.Key+"_"+cut.Name+".g4pk");
+                string referencePath=Event.Directory+Path.DirectorySeparatorChar+Event.Name+"_<CHARA>_<CUT>.g4pk";
                 string clipName=cut.Name;
-                var motionCommand=Event.Commands.LastOrDefault(c=>c.Code==HissatsuEvent.Motion&&Expand(c.Text(0))==actor.Key&&(c.Cut==cut.Name||c.Frame==cut.Start));
-                if(motionCommand!=null){clipName=motionCommand.Text(1)??cut.Name;string reference=motionCommand.Text(5);if(!string.IsNullOrEmpty(reference)&&reference!="NONE")path=HissatsuEvent.Resolve(Expand(reference).Replace("<CHARA>",actor.Key).Replace("<CUT>",clipName));}
+                var motionCommand=Event.Commands.Where(c=>c.Code==HissatsuEvent.Motion&&Expand(c.Text(0))==actor.Key&&(c.Cut==cut.Name||c.Frame==cut.Start))
+                    .OrderBy(c=>c.Frame==cut.Start?1:0).LastOrDefault();
+                if(motionCommand!=null){clipName=motionCommand.Text(1)??cut.Name;string reference=motionCommand.Text(5);if(!string.IsNullOrEmpty(reference)&&reference!="NONE")referencePath=reference;}
                 motionNames[actor.Key+"/"+cut.Name]=clipName;
                 if(motionCommand?.Text(5)==null||motionCommand.Text(5)=="NONE"){
                     var loadCommand=Event.Commands.LastOrDefault(c=>c.Code==unchecked((uint)-715982243)&&Expand(c.Text(0))==actor.Key&&c.Text(3)==cut.Name);
-                    if(loadCommand!=null)path=HissatsuEvent.Resolve(Expand(loadCommand.Text(1)).Replace("<CHARA>",actor.Key).Replace("<CUT>",clipName));
+                    if(loadCommand!=null)referencePath=loadCommand.Text(1);
+                }
+                string ResolveMotionPath(string reference,string type){
+                    string sourceActor=actor.Key.StartsWith("c00",StringComparison.OrdinalIgnoreCase)?"c00"+type+actor.Key.Substring(5):actor.Key;
+                    return HissatsuEvent.Resolve(Expand(reference.Replace("<TYPE>",type)).Replace("<CHARA>",sourceActor).Replace("<CUT>",clipName));
+                }
+                string actorType="01",path=ResolveMotionPath(referencePath,actorType);
+                if(!File.Exists(path)&&actor.Key.StartsWith("c00",StringComparison.OrdinalIgnoreCase)){
+                    // Use only TYPE alternatives declared for this actor/cut.
+                    // Some native variants ship type-03 motions only, while the
+                    // preview geometry still uses the default demo character.
+                    var types=Event.Commands.Where(c=>c.Code==unchecked((uint)-29805182)&&c.Text(1)=="TYPE"&&Expand(c.Text(0))==actor.Key&&
+                        (c.Cut==cut.Name||c.Frame==cut.Start)).Select(c=>c.Text(2)).Where(t=>t!=null&&Regex.IsMatch(t,@"^\d{2}$")).Distinct();
+                    foreach(string type in types){string candidate=ResolveMotionPath(referencePath,type);if(!File.Exists(candidate))continue;path=candidate;actorType=type;break;}
+                }
+                motionTypes[actor.Key+"/"+cut.Name]=actorType;
+                if(!File.Exists(path)){
+                    // Some shipped events still reference an internal _test
+                    // animation in PLAY, but LOAD supplies the released copy.
+                    // Use only this actor/cut's declared LOAD, not an arbitrary clip.
+                    var declared=Event.Commands.LastOrDefault(c=>c.Code==unchecked((uint)-715982243)&&Expand(c.Text(0))==actor.Key&&c.Text(3)==cut.Name);
+                    if(declared!=null){
+                        string candidate=ResolveMotionPath(declared.Text(1),actorType);
+                        if(File.Exists(candidate)){
+                            if(missing.Add(path))Warnings.Add("Missing playback reference; using event-declared motion: "+candidate);
+                            path=candidate;
+                        }
+                    }
                 }
                 if(!File.Exists(path)){if(motionCommand!=null&&actor.Value.EmbeddedMotion==null&&missing.Add(path))Warnings.Add("Missing motion resource: "+path);continue;}
                 try{var blocks=G4AnimationBank.Package(File.ReadAllBytes(path),path);if(blocks.TryGetValue("G4MT",out var mt))motions[actor.Key+"/"+cut.Name]=G4AnimationBank.Read(mt,path);
-                    motionNames[actor.Key+"/"+cut.Name]=clipName;
+                    motionNames[actor.Key+"/"+cut.Name]=clipName;motionPaths[actor.Key+"/"+cut.Name]=path;
                     foreach(string kind in new[]{"G4MA","G4TP"})if(blocks.TryGetValue(kind,out var data))actor.Value.MaterialBanks.Add(G4AnimationBank.Read(data,path+"/"+kind));
                     if(blocks.TryGetValue("G4VS",out var visibility))actor.Value.VisibilityBanks.Add(G4AnimationBank.Read(visibility,path+"/G4VS"));
                 }catch(Exception e){Warnings.Add(path+": "+e.Message);}
             }
             Loading.UpdateText(Event.Name+" / "+cut.Name);Loading.UpdateProgress(45+(Event.Cuts.IndexOf(cut)+1)*45/Event.Cuts.Count);yield return null;
         }
-        var known=new HashSet<uint>{HissatsuEvent.Actor,HissatsuEvent.Model,HissatsuEvent.Attach,HissatsuEvent.Motion,HissatsuEvent.Visible,
+        ballStatus=new HissatsuBallStatus(Event,Expand,neutralIncomingBall);
+        if(neutralIncomingBall)foreach(var actor in actors.Values)actor.IncomingBallAppearance();
+        var known=new HashSet<uint>{0x48A58CDC,HissatsuBallStatus.Command,HissatsuEvent.Actor,HissatsuEvent.Model,HissatsuEvent.Attach,HissatsuEvent.Motion,HissatsuEvent.Visible,HissatsuEvent.SceneVisibility,
             unchecked((uint)-50052350),unchecked((uint)-1585127052),unchecked((uint)-715982243),unchecked((uint)-1463526750),
             unchecked((uint)-150365506),476339743,unchecked((uint)-1950176284),unchecked((uint)-1648841908),unchecked((uint)-29805182),unchecked((uint)-448728658),
             0xB9FC8079, // cut binding is resolved by the native motion/camera clip directory
@@ -116,6 +150,17 @@ internal sealed class HissatsuPreview : IDisposable
         // cut. Generic one-clip looping resources may still supply a default.
         return bank.Clips.Any(c=>Regex.IsMatch(c.Name,@"^c\d+$"))?null:bank.Clips.FirstOrDefault();
     }
+    internal string DescribeCharacters(float seconds)
+    {
+        var cut=Event.At(seconds);var report=new System.Text.StringBuilder();
+        report.AppendLine($"[Hissatsu] {Event.Name} time={seconds:F3}s cut={cut.Name} sceneVisible={Event.SceneVisibleAt(seconds)}");
+        foreach(var pair in actors.Where(p=>p.Key.StartsWith("c00",StringComparison.OrdinalIgnoreCase))){
+            var motion=Motion(pair.Key,cut.Name);var renderers=pair.Value.Root.GetComponentsInChildren<Renderer>(true);
+            motionPaths.TryGetValue(pair.Key+"/"+cut.Name,out string path);
+            report.AppendLine($"actor={pair.Key} active={pair.Value.Root.activeSelf} visibleMeshes={renderers.Count(r=>r.enabled&&r.gameObject.activeInHierarchy)}/{renderers.Length} position={pair.Value.Root.transform.position} motion={motion?.Name??"MISSING"} range={motion?.Start}-{motion?.End} fps={motion?.Fps} file={path??"embedded/none"}");
+        }
+        return report.ToString().TrimEnd();
+    }
     internal void Evaluate(float seconds)
     {
         seconds=Mathf.Clamp(seconds,0,Duration);float frame=seconds*60;
@@ -128,15 +173,24 @@ internal sealed class HissatsuPreview : IDisposable
                 if(c.Code==476339743)actor.Root.transform.localScale=new Vector3(c.Number(1),c.Number(2),c.Number(3));
                 else if(c.Code==unchecked((uint)-150365506))actor.Root.transform.localPosition=new Vector3(c.Number(1),c.Number(2),-c.Number(3));
             }
-            actor.Root.SetActive(visible);
+            float opacity=1,fadeFrom=1,fadeTo=1,fadeStart=0,fadeDuration=0;
+            foreach(var command in Event.Commands.Where(c=>c.Code==0x48A58CDC&&c.Frame<=frame&&Expand(c.Text(0))==pair.Key)){
+                opacity=fadeDuration<=0?fadeTo:Mathf.Lerp(fadeFrom,fadeTo,(command.Frame-fadeStart)/fadeDuration);
+                fadeFrom=opacity;fadeTo=Mathf.Clamp01(command.Number(1));fadeStart=command.Frame;fadeDuration=Mathf.Max(0,command.Number(2));
+            }
+            opacity=fadeDuration<=0?fadeTo:Mathf.Lerp(fadeFrom,fadeTo,(frame-fadeStart)/fadeDuration);
+            actor.Opacity(opacity);actor.Root.SetActive(visible&&opacity>.001f);
         }
+        ballStatus?.Apply(seconds,actors);
         // Resolve the point rigs first, then attached characters/ball/effects.
         var attachments=new Dictionary<string,HissatsuEvent.Command>(StringComparer.OrdinalIgnoreCase);
         var types=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         foreach(var c in Event.Commands.Where(c=>c.Frame<=frame&&(string.IsNullOrEmpty(c.Cut)||c.Cut==cut.Name))){
             if(c.Code==unchecked((uint)-29805182)&&c.Text(1)=="TYPE"){types[c.Text(0)]=c.Text(2);continue;}
             if(c.Code==HissatsuEvent.Attach){
-                if(c.Text(0)?.Contains("<TYPE>")==true&&types.TryGetValue(c.Text(0),out string type)&&type!="01")continue;
+                string actorKey=Expand(c.Text(0));
+                string selectedType=motionTypes.TryGetValue(actorKey+"/"+cut.Name,out var nativeType)?nativeType:"01";
+                if(c.Text(0)?.Contains("<TYPE>")==true&&types.TryGetValue(c.Text(0),out string type)&&type!=selectedType)continue;
                 attachments[Expand(c.Text(0))]=c;
             }
         }
@@ -160,7 +214,6 @@ internal sealed class HissatsuPreview : IDisposable
             visiting.Remove(key);resolved.Add(key);
         }
         foreach(string actor in actors.Keys)Attach(actor,new HashSet<string>());
-        foreach(var actor in actors.Values)actor.Particles?.Evaluate(cut.Name,elapsed,actor);
         var cameraClip=cameraBank.Find(cut.Name);if(cameraClip==null)throw new InvalidDataException(Event.Name+": missing camera cut "+cut.Name);
         Vector3 position=Vector3.zero,target=Vector3.forward;float roll=0,fov=50;
         foreach(var track in cameraClip.Tracks)foreach(var curve in track.Curves){float v=curve.Sample(cameraClip.Start+elapsed*cameraClip.Fps).x;
@@ -171,6 +224,10 @@ internal sealed class HissatsuPreview : IDisposable
         camera.transform.position=position;Vector3 forward=target-position;
         if(forward.sqrMagnitude>1e-10f)camera.transform.rotation=Quaternion.LookRotation(forward,Vector3.up)*Quaternion.AngleAxis(roll,Vector3.forward);
         camera.fieldOfView=Mathf.Clamp(fov,1,179);camera.nearClipPlane=.01f;camera.farClipPlane=5000;
+        // The current cut camera and actor attachment transforms must be final
+        // before camera-facing geometry and particles are evaluated.
+        foreach(var actor in actors.Values)actor.ApplyBillboards(camera);
+        foreach(var actor in actors.Values)actor.Particles?.Evaluate(cut.Name,elapsed,actor);
     }
     public void Dispose(){if(Root!=null){Root.SetActive(false);CharacterManager.DestroyRuntimeObject(Root);}actors.Clear();motions.Clear();}
 }

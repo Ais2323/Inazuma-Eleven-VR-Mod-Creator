@@ -31,6 +31,7 @@ public sealed class Loading : MonoBehaviour
         internal Action Cancel;
         internal Coroutine Routine;
         internal bool Finished, Cancelled;
+        internal string LastText;
         internal int Dependents;
         internal Session Parent;
         internal readonly List<Session> Children = new();
@@ -79,7 +80,7 @@ public sealed class Loading : MonoBehaviour
         var session = new Session { Work = work, Cancel = onCancel };
         host.current = session;
         host.progressBar.fillAmount = 0;
-        host.infoText.text = LocalizationManager.GetText("Loading", "Common");
+        UpdateText(LocalizationManager.GetText("Loading", "Common"));
         host.cancelText.text = LocalizationManager.GetText("Cancel", "Common");
         host.cancelButton.interactable = onCancel != null;
         host.SetVisible(true);
@@ -174,7 +175,14 @@ public sealed class Loading : MonoBehaviour
 
     public static void UpdateText(string text)
     {
-        if (IsRunning) instance.infoText.text = text ?? "";
+        if (!IsRunning) return;
+        text ??= "";
+        instance.infoText.text = text;
+        // AppLog forwards to Unity Console / Player.log as well as the UI.
+        // Deduplicate within a loading session, not across later operations.
+        if (instance.current.LastText == text) return;
+        instance.current.LastText = text;
+        if (!string.IsNullOrWhiteSpace(text)) AppLog.Info("[Loading] " + text);
     }
 
     public static void Cancel()

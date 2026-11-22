@@ -8,6 +8,11 @@ Shader "CharMaker/G4EventCharacter"
         _MskTex ("Skin color mask", 2D) = "black" {}
         _Color ("Tint", Color) = (1,1,1,1)
         _LightTint ("Event light", Color) = (1,1,1,1)
+        _StatusColor ("Native status tint", Vector) = (1,1,1,1)
+        _StatusRim ("Native status rim", Vector) = (1,1,1,0)
+        _StatusPower ("Native status rim power", Float) = 10
+        _Gain ("Native ambient gain", Float) = 1
+        _ModelOpacity ("Event model opacity", Float) = 1
         _Glass ("Layered prop glass", Float) = 0
         _GlassReflection ("Prop sphere reflection", 2D) = "black" {}
         _SrcBlend ("Source blend", Float) = 1
@@ -47,7 +52,8 @@ Shader "CharMaker/G4EventCharacter"
             sampler2D _MainTex, _OcTex, _SpmTex, _MskTex,_GlassReflection;
             float4 _MainTex_ST, _Color, _SkinColor, _HairColor, _DetailUvST;
             float4 _LabelPrimaryColor, _LabelSecondaryColor, _LightTint, _EventUvRow0, _EventUvRow1;
-            float _UniformLabelColors,_Glass;
+            float4 _StatusColor,_StatusRim;float _StatusPower;
+            float _UniformLabelColors,_Glass,_ModelOpacity,_Gain;
             float _Cutoff, _OcDarkness, _OcUseGreen, _SpmStrength, _HasMsk, _WholeSkin, _RecolorWhite;
             struct Input { float4 vertex : POSITION; float2 uv : TEXCOORD0; float3 normal:NORMAL; };
             struct Output { float4 position : SV_POSITION; float2 uv : TEXCOORD0; float3 normal:TEXCOORD1; float3 view:TEXCOORD2; };
@@ -60,9 +66,9 @@ Shader "CharMaker/G4EventCharacter"
                 o.uv = float2(dot(_EventUvRow0.xyz,uv),dot(_EventUvRow1.xyz,uv));
                 return o;
             }
-            fixed4 frag(Output i) : SV_Target
+            float4 frag(Output i) : SV_Target
             {
-                fixed4 color = tex2D(_MainTex, i.uv) * _Color * _LightTint;
+                float4 color = tex2D(_MainTex, i.uv) * _Color * _LightTint;
                 if(_Glass>.5){
                     // Optical preview for the native paired shell: preserve the
                     // interior and show the authored sphere highlight at the rim.
@@ -70,7 +76,7 @@ Shader "CharMaker/G4EventCharacter"
                     float2 sphere=n.xy*float2(.5,-.5)+.5;
                     float3 reflection=tex2D(_GlassReflection,sphere).rgb;
                     float fresnel=pow(1-saturate(abs(dot(normalize(i.normal),normalize(i.view)))),3);
-                    return float4(lerp(color.rgb,reflection,saturate(fresnel+.25)),color.a*(.08+fresnel*.42));
+                    return float4(lerp(color.rgb,reflection,saturate(fresnel+.25)),color.a*(.08+fresnel*.42)*_ModelOpacity);
                 }
                 // Fixed accessory colors in the hair base must survive recoloring.
                 float whiteBase = step(0.999, min(color.r, min(color.g, color.b))) * step(0.5, _RecolorWhite);
@@ -87,10 +93,18 @@ Shader "CharMaker/G4EventCharacter"
                 float pureRed = step(0.999, msk.r) * step(msk.g, 0.001) * step(msk.b, 0.001) * step(0.5, _HasMsk);
                 color.rgb = lerp(color.rgb, _SkinColor.rgb, max(pureRed, step(0.5, _WholeSkin)));
                 float ocMask = saturate(lerp(max(oc.r, oc.g), oc.g, _OcUseGreen));
-                float spmMask = saturate(max(spm.r, max(spm.g, spm.b)));
+                // A specular mask is not a uniform white overlay. Restrict it
+                // to the light/view half-vector and preserve the surface hue.
+                float3 halfVector=normalize(normalize(i.view)+normalize(float3(.3,.8,.5)));
+                float specular=pow(saturate(dot(normalize(i.normal),halfVector)),32);
+                float spmMask=saturate(spm.b)*specular;
                 color.rgb *= lerp(_OcDarkness, 1.0, ocMask);
-                color.rgb = lerp(color.rgb, fixed3(1, 1, 1), spmMask * _SpmStrength);
-                return fixed4(color.rgb, 1);
+                color.rgb += color.rgb * spmMask * _SpmStrength;
+                float facing=saturate(dot(normalize(i.normal),normalize(i.view)));
+                float3 rim=_StatusRim.rgb*_StatusRim.w*pow(1-facing,max(_StatusPower,.0001));
+                float3 limited=.3*saturate(rim);
+                color.rgb=color.rgb*_StatusColor.rgb+min(5*color.a,1)*(rim-limited)+limited;
+                return float4(color.rgb*_Gain, _ModelOpacity);
             }
             ENDCG
         }
