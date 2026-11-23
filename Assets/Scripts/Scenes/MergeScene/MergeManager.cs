@@ -22,7 +22,7 @@ public class MergeManager : MonoBehaviour
     void OnClickOpenCore()
     {
         string[] paths = StandaloneFileBrowser.OpenFilePanel(
-            "Select CharacterMaker / UniformMaker saves", "", new[] { new ExtensionFilter("Maker saves", "charamaker", "uniformmaker") }, true);
+            "Select CharacterMaker / UniformMaker / HissatsuMaker saves", "", new[] { new ExtensionFilter("Maker saves", "charamaker", "uniformmaker", "hissatsumaker") }, true);
         if (paths == null || paths.Length == 0) return;
         var existing = new HashSet<string>(
             SelectBarContentParent.GetComponentsInChildren<SelectBarController>(true)
@@ -55,7 +55,7 @@ public class MergeManager : MonoBehaviour
         string[] paths = SelectBarContentParent.GetComponentsInChildren<SelectBarController>(true)
             .Select(value => value.path).Where(value => !string.IsNullOrWhiteSpace(value))
             .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ThenBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
-        if (paths.Length == 0) { AppLog.Error("Add .charamaker or .uniformmaker saves first."); yield break; }
+        if (paths.Length == 0) { AppLog.Error("Add .charamaker, .uniformmaker or .hissatsumaker saves first."); yield break; }
         string modName = modNameInput != null ? modNameInput.text.Trim() : "";
         if (string.IsNullOrWhiteSpace(modName)) { AppLog.Error("Enter a Mod name first."); yield break; }
         string[] folders = StandaloneFileBrowser.OpenFolderPanel("Export Mod", SettingManager.GetExportDirectory("modExportDirectory"), false);
@@ -64,6 +64,7 @@ public class MergeManager : MonoBehaviour
         var exportType = exportTypeDropdown != null ? (ModExportType)exportTypeDropdown.value : ModExportType.Viola;
         var documents = new List<CharacterMakerDocument>();
         var uniforms = new List<UniformMakerDocument>();
+        var skills = new List<HissatsuMakerDocument>();
         for (int i = 0; i < paths.Length; i++) {
             string path = paths[i];
             Loading.UpdateText(LocalizationManager.GetText("LoadingRead") + " " + Path.GetFileName(path));
@@ -73,6 +74,7 @@ public class MergeManager : MonoBehaviour
             try {
                 if (Path.GetExtension(path).Equals(".uniformmaker", StringComparison.OrdinalIgnoreCase)) uniforms.Add(UniformMakerDocument.Read(path));
                 else if (Path.GetExtension(path).Equals(".charamaker", StringComparison.OrdinalIgnoreCase)) documents.Add(CharacterMakerDocument.Read(path));
+                else if (Path.GetExtension(path).Equals(".hissatsumaker", StringComparison.OrdinalIgnoreCase)) skills.Add(HissatsuMakerDocument.Read(path));
                 else throw new InvalidDataException("Unsupported Maker save: " + path);
             } catch (Exception error) { AppLog.Error(Path.GetFileName(path) + ": " + error.Message); failed = true; }
             if (failed) yield break;
@@ -81,13 +83,13 @@ public class MergeManager : MonoBehaviour
         Loading.UpdateProgress(35);
         yield return null;
         try {
-            string modRoot = ExportMod(modName, folders[0], documents, uniforms, exportType);
+            string modRoot = ExportMod(modName, folders[0], documents, uniforms, exportType, skills);
             AppLog.Result("Mod exported: " + modRoot);
         } catch (Exception error) { AppLog.Error("Mod export failed: " + error.Message); }
         Loading.UpdateProgress(100);
     }
     public static string ExportMod(string modName, string parent, IEnumerable<CharacterMakerDocument> documents, IEnumerable<UniformMakerDocument> uniforms = null,
-        ModExportType exportType = ModExportType.Viola)
+        ModExportType exportType = ModExportType.Viola, IEnumerable<HissatsuMakerDocument> skills = null)
     {
         if (!Enum.IsDefined(typeof(ModExportType), exportType)) throw new ArgumentOutOfRangeException(nameof(exportType));
         modName = (modName ?? "").Trim();
@@ -106,7 +108,9 @@ public class MergeManager : MonoBehaviour
         try {
             var characters = documents?.ToArray() ?? Array.Empty<CharacterMakerDocument>();
             var kits = uniforms?.ToArray() ?? Array.Empty<UniformMakerDocument>();
-            if (characters.Length == 0 && kits.Length == 0) throw new InvalidDataException("No Maker documents selected.");
+            var moves = skills?.ToArray() ?? Array.Empty<HissatsuMakerDocument>();
+            if (moves.Length > 0 && exportType != ModExportType.InazumaFantasy) throw new InvalidDataException("HissatsuMaker saves require Inazuma Fantasy export.");
+            if (characters.Length == 0 && kits.Length == 0 && moves.Length == 0) throw new InvalidDataException("No Maker documents selected.");
             string data = Path.Combine(stage, "data");
             Directory.CreateDirectory(data);
             bool viola = exportType == ModExportType.Viola;
@@ -124,6 +128,7 @@ public class MergeManager : MonoBehaviour
                     UniformMakerExporter.WriteFantasyUniformResources(data, stage, modName, preserveCharacterData: characters.Length > 0);
                 if (characters.Length > 0)
                     CharacterFantasyExporter.WriteResources(characters, characterIds, data, stage);
+                HissatsuFantasyExporter.Export(moves, stage, prefix);
                 WriteFantasyPackage(stage, data, prefix, modName);
             }
             // A newly owned staging folder is moved into a checked sibling, never an existing mod.

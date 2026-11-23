@@ -246,6 +246,27 @@
         "HissatsuPlay": "Play",
         "HissatsuPause": "Pause",
         "HissatsuStadiumLoading": "Loading stadium...",
-        "HissatsuCatalogLoading": "Reading special moves..."
+        "HissatsuCatalogLoading": "Reading special moves...",
+        "HissatsuNewSkill": "New special move",
+        "HissatsuClipEditingPending": "Model and effect editing will be added later.",
+        "HissatsuSkillName": "Special move name",
+        "HissatsuDescription": "Description",
+        "HissatsuInfo": "Info",
+        "HissatsuTextures": "Textures",
+        "HissatsuMotionGroup": "Motion clips",
+        "HissatsuRemoveClip": "Remove clip",
+        "HissatsuSelectSourceSkill": "Select source special move",
+        "HissatsuAddMotion": "Add motion clip",
+        "HissatsuNewMotion": "New motion",
+        "HissatsuCategoryAll": "All types",
+        "HissatsuCategoryShoot": "Shoot",
+        "HissatsuCategoryDribble": "Dribble",
+        "HissatsuCategoryDefense": "Defense",
+        "HissatsuCategoryKeeper": "Keeper",
+        "HissatsuCategorySummon": "Summon",
+        "HissatsuAlternateAnimation": "Alternate animation",
+        "HissatsuSellInShop": "Sell in shop",
+        "HissatsuFreeInShop": "Free",
+        "HissatsuShopPrice": "Price"
     }
 }

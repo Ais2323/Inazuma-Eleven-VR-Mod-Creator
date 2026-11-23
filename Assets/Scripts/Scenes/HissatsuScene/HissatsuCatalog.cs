@@ -7,14 +7,15 @@ using G4Runtime;
 
 internal sealed class HissatsuCatalog
 {
-    internal sealed class Entry { internal uint Id; internal int Category; internal string Resource,Event,AlternateEvent,Label,AssignedModel,AssignedPath; }
+    internal sealed class Entry { internal uint Id; internal int Category,Affinity=-1; internal string Resource,Event,AlternateEvent,Label,AssignedModel,AssignedPath; }
     internal readonly List<Entry> Entries=new();
     internal HissatsuCatalog()
     {
         string root=DumpDataManager.CommonPath,folder=Path.Combine(root,"gamedata","skill");
         var events=Directory.GetFiles(Path.Combine(root,"event_cfg","evt"),"*.cfg.bin")
             .Select(p=>Path.GetFileName(p).Replace(".cfg.bin","")).ToDictionary(n=>G4TextureParser.Crc32(n),n=>n);
-        var names=CharacterIdentityCatalog.Get().SkillOptions(UniformCatalog.Locale).Where(o=>o.Id!=0).ToDictionary(o=>o.Id,o=>System.Text.RegularExpressions.Regex.Replace(o.Label,@"[\s·．]+[0-9A-Fa-f]{8}$",""));
+        var options=CharacterIdentityCatalog.Get().SkillOptions(UniformCatalog.Locale).Where(o=>o.Id!=0).ToDictionary(o=>o.Id);
+        var names=options.ToDictionary(o=>o.Key,o=>System.Text.RegularExpressions.Regex.Replace(o.Value.Label,@"[\s·．]+[0-9A-Fa-f]{8}$",""));
         string path=CharacterIdentityCatalog.Find(folder,"skill_config_");
         var db=new AvatarRecipeParser.Rdbnp(File.ReadAllBytes(path),path);var list=db.GetList("m_skillInfoList");
         for(int i=0;i<list.Count;i++){
@@ -57,6 +58,7 @@ internal sealed class HissatsuCatalog
             var model=actor==null?null:models.Rows.FirstOrDefault(r=>r.Name=="CHARA_MODEL_INFO"&&r.UInt(0)==actor.UInt(6));
             Entries.Add(new Entry{Id=id,Category=4,Resource=row.Text(1),Event=ev,Label=names.TryGetValue(id,out string name)?name:row.Text(1),AssignedModel=actor?.Text(1),AssignedPath=model==null?null:"chr/"+model.Text(1)});
         }
+        foreach(var entry in Entries)if(options.TryGetValue(entry.Id,out var option))entry.Affinity=option.Affinity;
         Entries.Sort((a,b)=>{int c=a.Category.CompareTo(b.Category);return c!=0?c:StringComparer.CurrentCultureIgnoreCase.Compare(a.Label,b.Label);});
     }
 }

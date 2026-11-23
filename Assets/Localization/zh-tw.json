@@ -246,6 +246,27 @@
         "HissatsuPlay": "播放",
         "HissatsuPause": "暫停",
         "HissatsuStadiumLoading": "讀取球場中…",
-        "HissatsuCatalogLoading": "讀取必殺技資料中…"
+        "HissatsuCatalogLoading": "讀取必殺技資料中…",
+        "HissatsuNewSkill": "新增必殺技",
+        "HissatsuClipEditingPending": "模型與特效編輯將於之後加入。",
+        "HissatsuSkillName": "必殺技名稱",
+        "HissatsuDescription": "描述",
+        "HissatsuInfo": "資訊",
+        "HissatsuTextures": "貼圖",
+        "HissatsuMotionGroup": "Motion 片段",
+        "HissatsuRemoveClip": "移除片段",
+        "HissatsuSelectSourceSkill": "選擇來源必殺技",
+        "HissatsuAddMotion": "加入 Motion 片段",
+        "HissatsuNewMotion": "新增新的片段",
+        "HissatsuCategoryAll": "全部類型",
+        "HissatsuCategoryShoot": "射門",
+        "HissatsuCategoryDribble": "盤球",
+        "HissatsuCategoryDefense": "防守",
+        "HissatsuCategoryKeeper": "守門",
+        "HissatsuCategorySummon": "化身召喚",
+        "HissatsuAlternateAnimation": "替代動畫",
+        "HissatsuSellInShop": "商店販售",
+        "HissatsuFreeInShop": "免費",
+        "HissatsuShopPrice": "價格"
     }
 }
